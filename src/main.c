@@ -16,15 +16,43 @@
 /* entrada                                                              */
 
 enum { B_UP, B_DOWN, B_LEFT, B_RIGHT, B_OK, B_BACK, B_INFO, B_START, B_SELECT, B_L1, B_R1, NB };
-static int held[NB], pressed[NB];
-static Uint32 repeatAt[NB];
+/* Entrada por fonte: 0 = controle 1 (+ teclado no PC), 1 = controle 2.
+ * Na partida, o controle 1 comanda so o jogador 1 e o controle 2 comanda os
+ * jogadores 2 a 4. 'pressed' (uniao das duas fontes) serve aos menus. */
+#define NSRC 2
+static int held[NSRC][NB], pressedSrc[NSRC][NB], pressed[NB];
+static Uint32 repeatAt[NSRC][NB];
+static SDL_JoystickID padId[NSRC] = { -1, -1 };
 static int quitReq;
 
-static void press(int b, int down) {
-    if (b < 0) return;
-    if (down && !held[b]) { pressed[b] = 1; repeatAt[b] = SDL_GetTicks() + 320; }
-    held[b] = down;
+static void press(int src, int b, int down) {
+    if (b < 0 || src < 0 || src >= NSRC) return;
+    if (down && !held[src][b]) { pressedSrc[src][b] = 1; repeatAt[src][b] = SDL_GetTicks() + 320; }
+    held[src][b] = down;
 }
+
+static int pad_slot(SDL_JoystickID id) {
+    for (int i = 0; i < NSRC; i++) if (padId[i] == id) return i;
+    return -1;
+}
+
+/* abre o controle do indice 'dev' e o associa a uma porta (1 ou 2) */
+static void open_pad(int dev) {
+    if (!SDL_IsGameController(dev)) return;
+    SDL_GameController *gc = SDL_GameControllerOpen(dev);
+    if (!gc) return;
+    SDL_JoystickID id = SDL_JoystickInstanceID(SDL_GameControllerGetJoystick(gc));
+    if (pad_slot(id) >= 0) return;
+    int want = SDL_GameControllerGetPlayerIndex(gc);
+    if (want < 0 || want >= NSRC) want = dev;
+    if (want >= 0 && want < NSRC && padId[want] < 0) { padId[want] = id; return; }
+    for (int i = 0; i < NSRC; i++) if (padId[i] < 0) { padId[i] = id; return; }
+}
+
+static int pad2_connected(void) { return padId[1] >= 0; }
+
+/* controle que comanda o jogador p (sem controle 2, o controle 1 comanda todos) */
+static int src_for_player(int p) { return (p == 0 || !pad2_connected()) ? 0 : 1; }
 
 static int key_button(SDL_Keycode k) {
     switch (k) {
@@ -60,28 +88,36 @@ static int pad_button(int b) {
 
 static void poll_input(void) {
     memset(pressed, 0, sizeof(pressed));
+    memset(pressedSrc, 0, sizeof(pressedSrc));
     SDL_Event e;
     while (SDL_PollEvent(&e)) {
         switch (e.type) {
         case SDL_QUIT: quitReq = 1; break;
-        case SDL_KEYDOWN: if (!e.key.repeat) press(key_button(e.key.keysym.sym), 1); break;
-        case SDL_KEYUP: press(key_button(e.key.keysym.sym), 0); break;
-        case SDL_CONTROLLERDEVICEADDED: SDL_GameControllerOpen(e.cdevice.which); break;
-        case SDL_CONTROLLERBUTTONDOWN: press(pad_button(e.cbutton.button), 1); break;
-        case SDL_CONTROLLERBUTTONUP: press(pad_button(e.cbutton.button), 0); break;
+        case SDL_KEYDOWN: if (!e.key.repeat) press(0, key_button(e.key.keysym.sym), 1); break;
+        case SDL_KEYUP: press(0, key_button(e.key.keysym.sym), 0); break;
+        case SDL_CONTROLLERDEVICEADDED: open_pad(e.cdevice.which); break;
+        case SDL_CONTROLLERDEVICEREMOVED: {
+            int sl = pad_slot(e.cdevice.which);
+            if (sl >= 0) { padId[sl] = -1; memset(held[sl], 0, sizeof(held[sl])); }
+            break; }
+        case SDL_CONTROLLERBUTTONDOWN: press(pad_slot(e.cbutton.which), pad_button(e.cbutton.button), 1); break;
+        case SDL_CONTROLLERBUTTONUP: press(pad_slot(e.cbutton.which), pad_button(e.cbutton.button), 0); break;
         case SDL_CONTROLLERAXISMOTION: {
-            int v = e.caxis.value;
+            int v = e.caxis.value, sl = pad_slot(e.caxis.which);
             if (e.caxis.axis == SDL_CONTROLLER_AXIS_LEFTY) {
-                press(B_UP, v < -20000); press(B_DOWN, v > 20000);
+                press(sl, B_UP, v < -20000); press(sl, B_DOWN, v > 20000);
             } else if (e.caxis.axis == SDL_CONTROLLER_AXIS_LEFTX) {
-                press(B_LEFT, v < -20000); press(B_RIGHT, v > 20000);
+                press(sl, B_LEFT, v < -20000); press(sl, B_RIGHT, v > 20000);
             }
             break; }
         }
     }
     Uint32 now = SDL_GetTicks();
-    for (int b = B_UP; b <= B_RIGHT; b++)
-        if (held[b] && now >= repeatAt[b]) { pressed[b] = 1; repeatAt[b] = now + 90; }
+    for (int sv = 0; sv < NSRC; sv++) {
+        for (int b = B_UP; b <= B_RIGHT; b++)
+            if (held[sv][b] && now >= repeatAt[sv][b]) { pressedSrc[sv][b] = 1; repeatAt[sv][b] = now + 90; }
+        for (int b = 0; b < NB; b++) pressed[b] |= pressedSrc[sv][b];
+    }
 }
 
 /* ------------------------------------------------------------------ */
@@ -609,7 +645,12 @@ static void draw_game(void) {
         r_art(&ART_MASC[MASC_CHEER], px + pw / 2 - 36, py + 110, ART_MASC[MASC_CHEER].w, ART_MASC[MASC_CHEER].h, WHITE);
     } else if (curtain) {
         r_chrome_center(px + pw / 2 - 30, py + 50, 20, player_name(G.decider), c_mul(COL_PLAYER[G.decider], 1.15f));
-        r_text_center(FONT_SMALL, px + pw / 2 - 30, py + 84, TR("Sua vez! Passe o controle", "Your turn! Pass the controller", "¡Tu turno! Pasa el mando"), RGBA(230, 230, 230, 255));
+        if (pad2_connected()) {
+            char cm[80];
+            snprintf(cm, sizeof cm, TR("Sua vez! Use o controle %d", "Your turn! Use controller %d", "¡Tu turno! Usa el mando %d"), src_for_player(G.decider) + 1);
+            r_text_center(FONT_SMALL, px + pw / 2 - 30, py + 84, cm, RGBA(230, 230, 230, 255));
+        } else
+            r_text_center(FONT_SMALL, px + pw / 2 - 30, py + 84, TR("Sua vez! Passe o controle", "Your turn! Pass the controller", "¡Tu turno! Pasa el mando"), RGBA(230, 230, 230, 255));
         r_text_center(FONT_SMALL, px + pw / 2 - 30, py + 100, TR("e pressione {X}", "and press {X}", "y pulsa {X}"), RGBA(230, 230, 230, 255));
         const SprRect *m = &ART_MASC[MASC_THUMBS];
         r_art(m, px + pw - m->w - 10, py + ph - m->h - 10, m->w, m->h, WHITE);
@@ -617,7 +658,15 @@ static void draw_game(void) {
         const SprRect *m = &ART_MASC[MASC_POINT];
         int mx = px + pw - m->w - 2, my = py + 22;
         char pr[120];
-        r_text(FONT_MED, px + 8, py + 5, phase_prompt(pr, sizeof pr), RGBA(255, 210, 160, 255), pw - 16);
+        int cw = 0;
+        if (pad2_connected()) {   /* indicador do controle que esta comandando */
+            char cm[16];
+            snprintf(cm, sizeof cm, TR("CTRL %d", "PAD %d", "MANDO %d"), src_for_player(G.decider) + 1);
+            cw = r_text_w(FONT_SMALL, cm) + 12;
+            r_rrect(px + pw - cw - 6, py + 5, cw, 15, c_mul(COL_PLAYER[G.decider], 0.8f));
+            r_text(FONT_SMALL, px + pw - cw, py + 6, cm, WHITE, 0);
+        }
+        r_text(FONT_MED, px + 8, py + 5, phase_prompt(pr, sizeof pr), RGBA(255, 210, 160, 255), pw - 22 - cw);
         int rows = 8, rh = 16, ly = py + 26;
         if (optSel < optScroll) optScroll = optSel;
         if (optSel >= optScroll + rows) optScroll = optSel - rows + 1;
@@ -769,7 +818,17 @@ static int focused_card(void) {
     return -1;
 }
 
+static int pauseSrc = -1;
+static const int *pressedSrc_any(void) { return pressed; }
+
 static void update_game(void) {
+    /* quem pode comandar agora: o controle do jogador humano que decide;
+     * no turno da CPU (ou fim de jogo), qualquer controle */
+    int d0 = G.decider;
+    int src = -1;
+    if (paused) src = pauseSrc;
+    else if (G.phase != PH_OVER && d0 >= 0 && G.p[d0].human && !autoplayHuman) src = src_for_player(d0);
+    const int *pressed = src >= 0 ? pressedSrc[src] : pressedSrc_any();
     if (paused) {
         if (pressed[B_UP]) { pauseSel = (pauseSel + 4) % 5; audio_sfx(SFX_MOVE); }
         if (pressed[B_DOWN]) { pauseSel = (pauseSel + 1) % 5; audio_sfx(SFX_MOVE); }
@@ -800,7 +859,7 @@ static void update_game(void) {
         else audio_sfx(SFX_ERROR);
         return;
     }
-    if (pressed[B_START]) { paused = 1; pauseSel = 0; audio_sfx(SFX_OK); return; }
+    if (pressed[B_START]) { paused = 1; pauseSel = 0; pauseSrc = src; audio_sfx(SFX_OK); return; }
     if (pressed[B_INFO]) { inspect = !inspect; audio_sfx(inspect ? SFX_OK : SFX_BACK); }
     if (inspect) {
         int n = 5 + G.np;
@@ -886,8 +945,8 @@ static void draw_title(void) {
         r_rrect(214, 420, 212, 20, RGBA(10, 6, 20, 170));
         r_text_center(FONT_SMALL, 320, 423, TR("Pressione {X} ou {Z}", "Press {X} or {Z}", "Pulsa {X} o {Z}"), RGBA(255, 230, 190, 255));
     }
-    r_text(FONT_SMALL, 7, 433, "v1.4 Homebrew PS2", RGBA(0, 0, 0, 200), 0);
-    r_text(FONT_SMALL, 6, 432, "v1.4 Homebrew PS2", RGBA(255, 230, 210, 255), 0);
+    r_text(FONT_SMALL, 7, 433, "v1.5 Homebrew PS2", RGBA(0, 0, 0, 200), 0);
+    r_text(FONT_SMALL, 6, 432, "v1.5 Homebrew PS2", RGBA(255, 230, 210, 255), 0);
 }
 
 /* ------------------------------------------------------------------ */
@@ -979,7 +1038,7 @@ static void draw_setup(void) {
     }
     r_text(FONT_SMALL, 30, 420, TR("{X} Confirmar   < > Alterar   {O} Voltar", "{X} Confirm   < > Change   {O} Back", "{X} Confirmar   < > Cambiar   {O} Volver"), RGBA(220, 220, 230, 255), 0);
     r_text_wrap(FONT_SMALL, 462, 80, 168,
-                TR("Vários humanos jogam passando o controle (hot-seat). As cartas ficam ocultas entre os turnos.", "Several humans play by passing the controller (hot-seat). Cards stay hidden between turns.", "Varios humanos juegan pasando el mando (hot-seat). Las cartas quedan ocultas entre turnos."),
+                TR("Controle 1: só o jogador 1 (Vermelho). Controle 2: os demais jogadores humanos. Sem o controle 2, todos usam o controle 1 (hot-seat).", "Controller 1: player 1 (Red) only. Controller 2: the other human players. Without controller 2, everyone uses controller 1 (hot-seat).", "Mando 1: solo el jugador 1 (Rojo). Mando 2: los demás jugadores humanos. Sin el mando 2, todos usan el mando 1 (hot-seat)."),
                 RGBA(220, 210, 200, 255), 14);
     const SprRect *m = &ART_MASC[MASC_THUMBS];
     r_art(m, 470, 170, m->w * 3 / 2, m->h * 3 / 2, WHITE);
@@ -1223,7 +1282,7 @@ static void draw_rules(void) {
                 r_text(FONT_SMALL, C[i].x + 4, C[i].y + r->h + 2, C[i].txt, WHITE, 0);
             else r_text(FONT_SMALL, C[i].x + r->w + 10, C[i].y + 13, C[i].txt, WHITE, 0);
         }
-        r_text_wrap(FONT_SMALL, 40, 372, 560, TR("No PC: setas, Enter/Z (confirmar), Esc/X (voltar), Tab (inspecionar), R (ver carta), P (pausa).", "On PC: arrows, Enter/Z (confirm), Esc/X (back), Tab (inspect), R (view card), P (pause).", "En PC: flechas, Enter/Z (confirmar), Esc/X (volver), Tab (inspeccionar), R (ver carta), P (pausa)."),
+        r_text_wrap(FONT_SMALL, 40, 372, 560, TR("Controle 1 comanda o jogador 1; controle 2 comanda os jogadores 2 a 4. No PC: setas, Enter/Z (confirmar), Esc/X (voltar), Tab (inspecionar), R (ver carta), P (pausa).", "Controller 1 drives player 1; controller 2 drives players 2-4. On PC: arrows, Enter/Z (confirm), Esc/X (back), Tab (inspect), R (view card), P (pause).", "El mando 1 controla al jugador 1; el mando 2, a los jugadores 2 a 4. En PC: flechas, Enter/Z (confirmar), Esc/X (volver), Tab (inspeccionar), R (ver carta), P (pausa)."),
                     RGBA(200, 200, 210, 255), 15);
     } else if (rulesPage == 2) {
         /* anatomia da carta */
@@ -1327,6 +1386,56 @@ static void run_until_human(int phase, int maxSteps) {
     viewer = 0;
 }
 
+/* teste do roteamento de controles: dois controles virtuais, dois humanos */
+static void push_pad(SDL_JoystickID id, int button) {
+    SDL_Event e; memset(&e, 0, sizeof e);
+    e.type = SDL_CONTROLLERBUTTONDOWN; e.cbutton.which = id; e.cbutton.button = (Uint8)button; SDL_PushEvent(&e);
+    e.type = SDL_CONTROLLERBUTTONUP; SDL_PushEvent(&e);
+}
+static int pad_step(SDL_JoystickID id, int button) {
+    poll_input(); update_game();   /* quadro sem entrada: estabiliza (ex.: cortina) */
+    Game before = G;
+    int cBefore = curtain;
+    push_pad(id, button);
+    SDL_PumpEvents();
+    poll_input();       /* processa DOWN e UP: o "pressed" do quadro fica marcado */
+    update_game();
+    return memcmp(&before, &G, sizeof G) != 0 || cBefore != curtain;
+}
+static int padtest(void) {
+    padId[0] = 100; padId[1] = 101;
+    cfgNp = 2; cfgSlot[0] = 0; cfgSlot[1] = 0; cfgDraft = 0; start_game();
+    int ok = 1;
+    /* preparacao: jogador 1 (indice 0) escolhe cartas */
+    update_game();
+    printf("decide jogador %d (fase %d)\n", G.decider + 1, G.phase);
+    int r = pad_step(101, SDL_CONTROLLER_BUTTON_A);
+    printf("controle 2 aperta X na vez do jogador 1: %s\n", r ? "AGIU (ERRO)" : "ignorado (ok)");
+    ok &= !r;
+    if (curtain) pad_step(100, SDL_CONTROLLER_BUTTON_A);
+    r = pad_step(100, SDL_CONTROLLER_BUTTON_A);
+    printf("controle 1 aperta X na vez do jogador 1: %s\n", r ? "agiu (ok)" : "IGNORADO (ERRO)");
+    ok &= r;
+    /* avanca ate a vez do jogador 2 */
+    for (int i = 0; i < 20 && G.decider == 0; i++) { if (curtain) pad_step(100, SDL_CONTROLLER_BUTTON_A); pad_step(100, SDL_CONTROLLER_BUTTON_A); }
+    printf("decide jogador %d, cortina %d\n", G.decider + 1, curtain);
+    r = pad_step(100, SDL_CONTROLLER_BUTTON_A);
+    printf("controle 1 aperta X na vez do jogador 2: %s\n", r ? "AGIU (ERRO)" : "ignorado (ok)");
+    ok &= !r;
+    r = pad_step(101, SDL_CONTROLLER_BUTTON_A);
+    printf("controle 2 aperta X na vez do jogador 2: %s\n", r ? "agiu (ok)" : "IGNORADO (ERRO)");
+    ok &= r;
+    /* sem controle 2: controle 1 comanda todos */
+    padId[1] = -1;
+    if (G.decider == 1) {
+        r = pad_step(100, SDL_CONTROLLER_BUTTON_A);
+        printf("sem controle 2, controle 1 na vez do jogador 2: %s\n", r ? "agiu (ok)" : "IGNORADO (ERRO)");
+        ok &= r;
+    }
+    printf(ok ? "PADTEST OK\n" : "PADTEST FALHOU\n");
+    return ok ? 0 : 1;
+}
+
 static int autotest(const char *dir) {
     frame = 100;
     scene = SC_LANG; shot(dir, "00_idioma");
@@ -1385,7 +1494,7 @@ static int autotest(const char *dir) {
     nopts = game_options(&G, opts);
     viewer = 0; curtain = 0; apply_option(0); apply_option(0);
     nopts = game_options(&G, opts); curtain = 1;
-    scene = SC_GAME; shot(dir, "11_cortina");
+    scene = SC_GAME; padId[1] = 7; shot(dir, "11_cortina"); padId[1] = -1;
     return 0;
 }
 #endif
@@ -1397,7 +1506,10 @@ int main(int argc, char **argv) {
     int demo = 0;
     for (int i = 1; i < argc; i++) {
         if (!strcmp(argv[i], "--autotest") && i + 1 < argc) autodir = argv[++i];
-        else if (!strcmp(argv[i], "--demo")) demo = 1;   /* partida so de CPUs (testes) */
+        else if (!strcmp(argv[i], "--demo")) demo = 1;
+#ifndef PS2
+        else if (!strcmp(argv[i], "--padtest")) autodir = "padtest";
+#endif   /* partida so de CPUs (testes) */
     }
 
     SDL_SetHint(SDL_HINT_RENDER_SCALE_QUALITY, "1");
@@ -1418,9 +1530,10 @@ int main(int argc, char **argv) {
     SDL_RenderSetLogicalSize(ren, SCREEN_W, SCREEN_H);
     if (!r_init(ren)) { printf("falha ao criar texturas: %s\n", SDL_GetError()); return 1; }
     init_stars();
-    for (int i = 0; i < SDL_NumJoysticks(); i++) if (SDL_IsGameController(i)) SDL_GameControllerOpen(i);
+    for (int i = 0; i < SDL_NumJoysticks(); i++) open_pad(i);
 
 #ifndef PS2
+    if (autodir && !strcmp(autodir, "padtest")) return padtest();
     if (autodir) return autotest(autodir);
 #else
     (void)autodir;

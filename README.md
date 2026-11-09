@@ -48,12 +48,18 @@ A ISO usa `SYSTEM.CNF` com `BOOT2 = cdrom0:\MARSCOL.ELF;1` (NTSC, 640x448). Tudo
 | L1 / R1 | Rolar listas longas |
 | START | Pausa (continuar, regras, sair) |
 
+**Dois controles:** na partida, o **controle 1** comanda só o jogador 1 (Vermelho) e o **controle 2**
+comanda os jogadores 2, 3 e 4. Na vez de um jogador, o outro controle é ignorado, inclusive a pausa.
+Um indicador "CTRL 1/2" mostra qual controle está na vez. Os menus fora da partida aceitam os dois
+controles. Sem o controle 2 conectado, o controle 1 comanda todos (hot-seat). No PC, o teclado vale
+como controle 1. Para testar a lógica no PC: `./marscolony --padtest`.
+
 No PC: setas, Enter/Z, Esc/X, Tab, R (ver carta), P.
 
 ## Modos
 
 - 2 a 4 jogadores; cada vaga pode ser **Humano** ou **CPU Fácil / Normal / Difícil**.
-- Vários humanos jogam em *hot-seat*: há uma tela "passe o controle" e as cartas ficam ocultas entre os turnos.
+- Vários humanos: com dois controles, o controle 1 é do jogador 1 e o controle 2 dos demais; com um só, *hot-seat*. As cartas ficam ocultas entre os turnos.
 - Variante opcional de **draft** de cartas (do livro de regras).
 - Velocidade da CPU: normal, rápida ou instantânea.
 - Tutorial "Como jogar" com 9 páginas dentro do jogo (inclui a anatomia da carta e o mapa de botões).
