@@ -94,6 +94,9 @@ ao subir para ★★, **ping de sonar** quando começa a sua vez, brilho cristal
 bips de dados ao comprar cartas e zumbido de erro. Os sons das habilidades automáticas dos edifícios
 também tocam.
 
+O áudio sai a **48 kHz**, a taxa nativa do SPU2. Outras taxas passariam pelo conversor do `audsrv`
+no IOP, que gera chiado. O sintetizador roda a 24 kHz e o resultado é interpolado 2× para poupar o EE.
+
 Volumes de música e efeitos (0–10) ficam na tela de configuração e no menu de pausa.
 `make test` também roda `audio_render`, que gera as trilhas e efeitos em WAV e confere níveis e clipping.
 
@@ -118,6 +121,10 @@ Onde cada item aparece:
 atlas de texto/ícones 512x256 RGBA (512 KB), arte 512x512 em 16 bits (512 KB) e key art + botões
 512x512 em 16 bits (512 KB). Cada tela usa no máximo duas dessas texturas (≈1 MB). Isso foi
 calculado a partir da configuração do SDL2 para PS2, mas não pude medir em hardware real.
+
+**Cores no PS2.** No GS, o valor 0x80 (128) representa 100% na cor de modulação e no alpha da mistura.
+O SDL2 para PS2 repassa 0–255 sem converter, o que dobra brilho e opacidade. O `render.c` converte
+esses valores para 0–128 no build de PS2 (`#ifdef PS2`). O build de PC não muda.
 
 Para regenerar: `make assets` (requer Pillow, numpy e scipy).
 

@@ -30,8 +30,28 @@ Color c_mul(Color c, float k) {
 }
 Color c_alpha(Color c, int a) { return (c & 0xFFFFFF00u) | (uint32_t)(a & 255); }
 
+/*
+ * No GS do PS2, 0x80 (128) significa 1.0 tanto na cor do vertice (que modula a
+ * textura) quanto no alpha usado na mistura. O SDL2 para PS2 repassa os valores
+ * 0..255 sem converter, o que dobra brilho e opacidade. Por isso, no PS2:
+ *  - cor/alpha de modulacao das texturas: 0..255 -> 0..128
+ *  - alpha dos retangulos solidos: 0..255 -> 0..128 (a cor RGB fica 0..255)
+ *  - alpha guardado nas texturas de 32 bits: 0..255 -> 0..128
+ * (texturas de 16 bits ja usam TEXA.TA1 = 0x80 no gsKit).
+ */
+#ifdef PS2
+static inline int gsv(int v) { return (v * 128 + 127) / 255; }
+#else
+static inline int gsv(int v) { return v; }
+#endif
+
 static void setc(Color c) {
-    SDL_SetRenderDrawColor(R, (c >> 24) & 255, (c >> 16) & 255, (c >> 8) & 255, c & 255);
+    SDL_SetRenderDrawColor(R, (c >> 24) & 255, (c >> 16) & 255, (c >> 8) & 255, gsv(c & 255));
+}
+
+static void set_mod(SDL_Texture *t, Color c) {
+    SDL_SetTextureColorMod(t, gsv((c >> 24) & 255), gsv((c >> 16) & 255), gsv((c >> 8) & 255));
+    SDL_SetTextureAlphaMod(t, gsv(c & 255));
 }
 
 /* texturas de 16 bits (ABGR1555) geradas por tools/gen_art.py */
@@ -61,8 +81,7 @@ static SDL_Texture *tex1555(const uint8_t *p, const uint8_t *end) {
 
 static void blit_tex(SDL_Texture *t, const SprRect *r, int x, int y, int w, int h, Color c) {
     SDL_Rect src = { r->x, r->y, r->w, r->h }, dst = { x, y, w, h };
-    SDL_SetTextureColorMod(t, (c >> 24) & 255, (c >> 16) & 255, (c >> 8) & 255);
-    SDL_SetTextureAlphaMod(t, c & 255);
+    set_mod(t, c);
     SDL_RenderCopy(R, t, &src, &dst);
 }
 
@@ -121,11 +140,14 @@ int r_init(SDL_Renderer *ren) {
         for (int x = 0; x < ATLAS_W; x++) {
             uint8_t *px = row + x * 4;
             px[0] = px[1] = px[2] = 255;
-            px[3] = alpha[y * ATLAS_W + x];
+            px[3] = (uint8_t)gsv(alpha[y * ATLAS_W + x]);
         }
     }
-    for (int y = 0; y < PADS_H; y++)
-        memcpy((uint8_t *)s->pixels + (PADS_Y + y) * s->pitch + PADS_X * 4, PADS_RGBA + y * PADS_W * 4, PADS_W * 4);
+    for (int y = 0; y < PADS_H; y++) {
+        uint8_t *dst = (uint8_t *)s->pixels + (PADS_Y + y) * s->pitch + PADS_X * 4;
+        memcpy(dst, PADS_RGBA + y * PADS_W * 4, PADS_W * 4);
+        for (int x = 0; x < PADS_W; x++) dst[x * 4 + 3] = (uint8_t)gsv(dst[x * 4 + 3]);
+    }
     free(alpha);
     atlas = SDL_CreateTextureFromSurface(R, s);
     SDL_FreeSurface(s);
@@ -182,8 +204,7 @@ void r_vgrad(int x, int y, int w, int h, Color a, Color b) {
 static void blit(int sx, int sy, int sw, int sh, int dx, int dy, int dw, int dh, Color c) {
     if (c == 0) return;
     SDL_Rect src = { sx, sy, sw, sh }, dst = { dx, dy, dw, dh };
-    SDL_SetTextureColorMod(atlas, (c >> 24) & 255, (c >> 16) & 255, (c >> 8) & 255);
-    SDL_SetTextureAlphaMod(atlas, c & 255);
+    set_mod(atlas, c);
     SDL_RenderCopy(R, atlas, &src, &dst);
 }
 
