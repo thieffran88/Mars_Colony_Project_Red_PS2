@@ -87,8 +87,9 @@ static void poll_input(void) {
 /* ------------------------------------------------------------------ */
 /* estado da interface                                                  */
 
-enum { SC_TITLE, SC_SETUP, SC_GAME, SC_OVER, SC_RULES, SC_CREDITS };
-static int scene = SC_TITLE, rulesReturn = SC_TITLE;
+enum { SC_TITLE, SC_SETUP, SC_GAME, SC_OVER, SC_RULES, SC_CREDITS, SC_LANG };
+static int scene = SC_LANG, rulesReturn = SC_TITLE;
+static int langSel = 0;
 static Uint32 frame;
 
 /* configuracao */
@@ -97,8 +98,18 @@ static int cfgSlot[MAXP] = { 0, 2, 2, 2 };   /* 0 humano, 1 facil, 2 normal, 3 d
 static int cfgDraft = 0, cfgSpeed = 0;
 static int cfgMusic = 6, cfgSfx = 8;     /* volumes 0..10 */
 static int setupSel = 0, titleSel = 0;
-static const char *SLOT_NAME[4] = { "Humano", "CPU Fácil", "CPU Normal", "CPU Difícil" };
-static const char *SPEED_NAME[3] = { "Normal", "Rápida", "Instantânea" };
+static const char *SLOT_NAMES[LANG_COUNT][4] = {
+    { "Humano", "CPU Fácil", "CPU Normal", "CPU Difícil" },
+    { "Human", "CPU Easy", "CPU Normal", "CPU Hard" },
+    { "Humano", "CPU Fácil", "CPU Normal", "CPU Difícil" },
+};
+static const char *SPEED_NAMES[LANG_COUNT][3] = {
+    { "Normal", "Rápida", "Instantânea" },
+    { "Normal", "Fast", "Instant" },
+    { "Normal", "Rápida", "Instantánea" },
+};
+#define SLOT_NAME SLOT_NAMES[g_lang]
+#define SPEED_NAME SPEED_NAMES[g_lang]
 
 /* jogo */
 static Game G;
@@ -188,7 +199,7 @@ static void draw_card_mini(int x, int y, int w, int h, int card, int hl, int dim
     else if (w >= 26) r_icon(IC_LEAF + cd->color, x + w - 14, y + 2, 12, RGBA(255, 255, 255, 220));
     int ay = y + hh;
     if (w >= 50 && h >= 70) {
-        int th = r_text_wrap(FONT_SMALL, x + 4, y + hh, w - 8, cd->name, RGBA(255, 255, 255, dim ? 120 : 255), 11);
+        int th = r_text_wrap(FONT_SMALL, x + 4, y + hh, w - 8, card_name(card), RGBA(255, 255, 255, dim ? 120 : 255), 11);
         ay = y + hh + (th > 22 ? 22 : th) + 1;
     }
     int ah = y + h - 3 - ay;
@@ -210,15 +221,24 @@ static void draw_card_full(int x, int y, int w, int card) {
     r_rrect(x + K(9), y + K(9), w - K(18), K(26), base);
     r_rect(x + K(14), y + K(11), w - K(70), K(2), RGBA(255, 255, 255, 120));
     r_icon(IC_LEAF + cd->color, x + K(14), y + K(13), K(18), WHITE);
-    r_text_scale(k);
-    r_text(FONT_MED, x + K(36), y + K(13), BLD_NAME[cd->color], WHITE, w - K(80));
+    {   /* reduz a fonte se o nome do tipo nao couber */
+        float ts = k;
+        r_text_scale(ts);
+        while (r_text_w(FONT_MED, bld_name(cd->color)) > w - K(82) && ts > k * 0.6f) { ts -= 0.05f; r_text_scale(ts); }
+        r_text(FONT_MED, x + K(36), y + K(13) + (int)((k - ts) * 8), bld_name(cd->color), WHITE, w - K(80));
+    }
     r_rrect(x + w - K(40), y + K(11), K(26), K(22), RGBA(22, 22, 30, 255));
     char v[8]; snprintf(v, sizeof v, "%d", cd->value);
     r_text_scale(k * 1.25f);
     r_text_center(FONT_MED, x + w - K(27), y + K(12), v, WHITE);
     /* nome */
+    {
+        float ts = k;
+        r_text_scale(ts);
+        while (r_text_w(FONT_MED, card_name(card)) > w - K(20) && ts > k * 0.55f) { ts -= 0.05f; r_text_scale(ts); }
+        r_text_center(FONT_MED, x + w / 2, y + K(42) + (int)((k - ts) * 8), card_name(card), RGBA(25, 25, 35, 255));
+    }
     r_text_scale(k);
-    r_text_center(FONT_MED, x + w / 2, y + K(42), cd->name, RGBA(25, 25, 35, 255));
     r_rect(x + K(16), y + K(61), w - K(32), K(3) > 0 ? K(3) : 1, base);
     /* janela da ilustracao */
     int wx = x + K(12), wy = y + K(68), ww = w - K(24), wh = K(86);
@@ -236,7 +256,7 @@ static void draw_card_full(int x, int y, int w, int card) {
         r_rrect(x + K(10), by, w - K(20), bh, RGBA(30, 30, 40, 255));
         r_rect(x + K(12), by + K(18), w - K(24), bh - K(20), RGBA(250, 250, 252, 255));
         r_text_scale(k * 0.9f);
-        r_text(FONT_MED, x + K(16), by + K(2), i == 0 ? "AÇÃO DA MÃO" : "AÇÃO DO MÓDULO", WHITE, 0);
+        r_text(FONT_MED, x + K(16), by + K(2), i == 0 ? TR("AÇÃO DA MÃO", "HAND ACTION", "ACCIÓN DE MANO") : TR("AÇÃO DO MÓDULO", "MODULE ACTION", "ACCIÓN DE MÓDULO"), WHITE, 0);
         r_rrect(x + w - K(28), by + K(4), K(11), K(11), c_mul(base, 1.2f));
         char buf[200];
         game_fx_text(i == 0 ? &cd->top : &cd->bottom, buf, sizeof buf);
@@ -260,9 +280,10 @@ static void draw_card_back(int x, int y, int w, int h, int color, int hl) {
 /* ------------------------------------------------------------------ */
 /* desenho: tabuleiro                                                   */
 
-static const char *ABILITY_SHORT[5] = {
-    "Mova {C} {S}<>{D}", "Ganhe 1 {E}", "1 {C} da Terra", "Carta ao fundo", "{C} nave > {S}"
-};
+static const char *ability_short(int b) {
+    const char *a[5] = { TR("Mova {C} {S}<>{D}", "Move {C} {S}<>{D}", "Mueve {C} {S}<>{D}"), TR("Ganhe 1 {E}", "Gain 1 {E}", "Gana 1 {E}"), TR("1 {C} da Terra", "1 {C} from Earth", "1 {C} de la Tierra"), TR("Carta ao fundo", "Card to bottom", "Carta al fondo"), TR("{C} nave > {S}", "{C} ship > {S}", "{C} nave > {S}") };
+    return a[b];
+}
 
 static int option_building(const Option *o) {
     switch (o->kind) {
@@ -283,7 +304,7 @@ static void draw_building(int b, int x, int y, int w, int h, int hl) {
     if (hl || flash) r_frame(x - 1, y - 1, w + 2, h + 2, RGBA(255, 255, 255, 120 + (int)(120 * sinf(frame * 0.25f))));
     r_rect(x + 1, y + 1, w - 2, 18, bc);
     r_icon(IC_LEAF + b, x + 3, y + 2, 16, RGBA(255, 255, 255, 255));
-    r_text(FONT_SMALL, x + 21, y + 3, COLOR_NAME[b], RGBA(255, 255, 255, 255), w - 44);
+    r_text(FONT_SMALL, x + 21, y + 3, color_name(b), RGBA(255, 255, 255, 255), w - 44);
     /* valor visivel */
     r_rect(x + w - 20, y + 2, 18, 16, RGBA(0, 0, 0, 120));
     char v[4];
@@ -321,26 +342,26 @@ static void draw_building(int b, int x, int y, int w, int h, int hl) {
             r_frame(sx, sy, w - lw - 12, 22, RGBA(255, 220, 120, 90));
         }
     } else {
-        r_text_wrap(FONT_SMALL, x + 6, cy + 2, w - 12, "Não abriga colonos. Recebe cartas de construção.", RGBA(190, 190, 200, 255), 13);
+        r_text_wrap(FONT_SMALL, x + 6, cy + 2, w - 12, TR("Não abriga colonos. Recebe cartas de construção.", "Holds no colonists. Takes construction cards.", "No aloja colonos. Recibe cartas de construcción."), RGBA(190, 190, 200, 255), 13);
         r_art_fit(&ART_BLD[b], x + w - 64, cy + 34, 60, 36, WHITE);
     }
     /* habilidade */
     int ay = y + 95;
-    r_text(FONT_SMALL, x + 5, ay, ABILITY_SHORT[b], RGBA(255, 230, 170, 255), w - 10);
+    r_text(FONT_SMALL, x + 5, ay, ability_short(b), RGBA(255, 230, 170, 255), w - 10);
     /* pilha */
     int sy = y + 112;
     if (B->nstack == 0) {
         r_frame(x + 6, sy, 30, 42, RGBA(255, 255, 255, 50));
-        r_text(FONT_SMALL, x + 42, sy + 6, b == C_CONSTR ? "Sem cartas" : "Valor base 3", RGBA(170, 170, 180, 255), w - 46);
+        r_text(FONT_SMALL, x + 42, sy + 6, b == C_CONSTR ? TR("Sem cartas", "No cards", "Sin cartas") : TR("Valor base 3", "Base value 3", "Valor base 3"), RGBA(170, 170, 180, 255), w - 46);
     } else {
         int top = B->stack[B->nstack - 1];
         draw_card_mini(x + 6, sy, 30, 42, top, 0, 0);
         char t[64];
-        r_text(FONT_SMALL, x + 42, sy + 2, CARDS[top].name, RGBA(255, 255, 255, 255), w - 46);
-        int n = 0, off = snprintf(t, sizeof t, "Antes:");
+        r_text(FONT_SMALL, x + 42, sy + 2, card_name(top), RGBA(255, 255, 255, 255), w - 46);
+        int n = 0, off = snprintf(t, sizeof t, TR("Antes:", "Before:", "Antes:"));
         for (int i = B->nstack - 2; i >= 0 && n < 6; i--, n++) off += snprintf(t + off, sizeof t - off, " %d", CARDS[B->stack[i]].value);
         if (B->nstack > 1) r_text(FONT_SMALL, x + 42, sy + 17, t, RGBA(170, 170, 180, 255), w - 46);
-        snprintf(t, sizeof t, "%d carta%s", B->nstack, B->nstack > 1 ? "s" : "");
+        snprintf(t, sizeof t, TR("%d carta%s", "%d card%s", "%d carta%s"), B->nstack, B->nstack > 1 ? "s" : "");
         r_text(FONT_SMALL, x + 42, sy + 30, t, RGBA(140, 140, 150, 255), w - 46);
     }
 }
@@ -355,7 +376,7 @@ static void draw_player_strip(int y, int hlPlayer, int hlPrep) {
         if (turn) r_frame(x + 1, y + 1, w - 2, 50, c_alpha(COL_PLAYER[p], 120 + (int)(100 * sinf(frame * 0.15f))));
         r_rect(x + 1, y + 1, 4, 50, COL_PLAYER[p]);
         char t[48];
-        int nw = r_chrome(x + 9, y + 4, 12, PLAYER_NAME[p], c_mul(COL_PLAYER[p], 1.15f));
+        int nw = r_chrome(x + 9, y + 4, 12, player_name(p), c_mul(COL_PLAYER[p], 1.15f));
         if (!P->human) r_text(FONT_SMALL, x + 14 + nw, y + 3, "CPU", RGBA(200, 200, 210, 255), 0);
         if (G.start == p) r_text(FONT_SMALL, x + w - 34, y + 4, "1º", RGBA(255, 220, 120, 255), 0);
         int ix = x + 9, iy = y + 20;
@@ -399,7 +420,7 @@ static void draw_card_detail(int x, int y, int w, int card, const char *extra) {
     if (card >= 0) {
         const CardDef *cd = &CARDS[card];
         r_rect(x, y, 4, 14, COL_BLD[cd->color]);
-        snprintf(buf, sizeof buf, "%s  {%d} valor %d", cd->name, cd->color, cd->value);
+        snprintf(buf, sizeof buf, TR("%s  {%d} valor %d", "%s  {%d} value %d", "%s  {%d} valor %d"), card_name(card), cd->color, cd->value);
         r_text(FONT_MED, x + 8, y - 1, buf, RGBA(255, 255, 255, 255), w - 8);
         int yy = y + 19;
         game_fx_text(&cd->top, buf, sizeof buf);
@@ -415,19 +436,19 @@ static void draw_card_detail(int x, int y, int w, int card, const char *extra) {
 }
 
 static void building_info(int b, char *buf, int n) {
-    if (b == C_CONSTR) snprintf(buf, n, "%s - %s", BLD_NAME[b], BLD_ABILITY[b]);
-    else snprintf(buf, n, "%s (valor visível %d) - %s", BLD_NAME[b], game_top_value(&G, b), BLD_ABILITY[b]);
+    if (b == C_CONSTR) snprintf(buf, n, "%s - %s", bld_name(b), bld_ability(b));
+    else snprintf(buf, n, TR("%s (valor visível %d) - %s", "%s (visible value %d) - %s", "%s (valor visible %d) - %s"), bld_name(b), game_top_value(&G, b), bld_ability(b));
 }
 
 static void draw_my_cards(int x, int y, int w, int h, int hlHand, int hlPrep) {
     panel(x, y, w, h, RGBA(90, 80, 110, 255));
     if (viewer < 0 || curtain) {
-        r_text_center(FONT_MED, x + w / 2, y + h / 2 - 20, "Cartas ocultas", RGBA(160, 160, 170, 255));
+        r_text_center(FONT_MED, x + w / 2, y + h / 2 - 20, TR("Cartas ocultas", "Hidden cards", "Cartas ocultas"), RGBA(160, 160, 170, 255));
         return;
     }
     Player *P = &G.p[viewer];
     char t[64];
-    snprintf(t, sizeof t, "Cartas de %s", PLAYER_NAME[viewer]);
+    snprintf(t, sizeof t, TR("Cartas de %s", "%s's cards", "Cartas de %s"), player_name(viewer));
     r_text(FONT_SMALL, x + 6, y + 3, t, COL_PLAYER[viewer], 0);
     int n = P->nhand + P->nprep;
     int isDraft = G.phase == PH_DRAFT && G.decider == viewer;
@@ -437,14 +458,14 @@ static void draw_my_cards(int x, int y, int w, int h, int hlHand, int hlPrep) {
     int cw = (avail - (n - 1) * 4) / n; if (cw > 58) cw = 58;
     int ch = cw * 4 / 3 + 4; if (ch > 82) ch = 82;
     int cx = x + 6, cy = y + 20;
-    r_text(FONT_SMALL, cx, cy + ch + 2, "{H} mão", RGBA(170, 170, 180, 255), 0);
+    r_text(FONT_SMALL, cx, cy + ch + 2, TR("{H} mão", "{H} hand", "{H} mano"), RGBA(170, 170, 180, 255), 0);
     for (int i = 0; i < P->nhand; i++, cx += cw + 4) draw_card_mini(cx, cy, cw, ch, P->hand[i], i == hlHand, 0);
     cx += 6;
-    if (P->nprep) r_text(FONT_SMALL, cx, cy + ch + 2, "{M} módulo", RGBA(170, 170, 180, 255), 0);
+    if (P->nprep) r_text(FONT_SMALL, cx, cy + ch + 2, TR("{M} módulo", "{M} module", "{M} módulo"), RGBA(170, 170, 180, 255), 0);
     for (int i = 0; i < P->nprep; i++, cx += cw + 4) draw_card_mini(cx, cy, cw, ch, P->prep[i], i == hlPrep, 0);
     if (isDraft) {
         cx += 6;
-        r_text(FONT_SMALL, cx, cy + ch + 2, "lote", RGBA(255, 220, 140, 255), 0);
+        r_text(FONT_SMALL, cx, cy + ch + 2, TR("lote", "pack", "lote"), RGBA(255, 220, 140, 255), 0);
         int sel = (optSel < nopts && opts[optSel].kind == OPT_DRAFT) ? opts[optSel].a : -1;
         for (int i = 0; i < G.npool[viewer]; i++, cx += cw + 4) draw_card_mini(cx, cy, cw, ch, G.pool[viewer][i], i == sel, 0);
     }
@@ -453,17 +474,17 @@ static void draw_my_cards(int x, int y, int w, int h, int hlHand, int hlPrep) {
 static const char *phase_prompt(char *buf, int n) {
     int d = G.decider;
     switch (G.phase) {
-    case PH_DRAFT: snprintf(buf, n, "Draft: fique com 1 carta (%d de 4)", G.draftPick + 1); break;
-    case PH_SETUP_PREP: snprintf(buf, n, "Preparação: carta para o {M} módulo (%d/2)", G.p[d].nprep + 1); break;
-    case PH_ACTION: snprintf(buf, n, "Sua vez! Escolha 1 ação"); break;
-    case PH_FX: snprintf(buf, n, "%s \"%s\"", G.ctxBottom ? "{M}" : "{H}", CARDS[(int)G.ctxCard].name); break;
+    case PH_DRAFT: snprintf(buf, n, TR("Draft: fique com 1 carta (%d de 4)", "Draft: keep 1 card (%d of 4)", "Draft: quédate 1 carta (%d de 4)"), G.draftPick + 1); break;
+    case PH_SETUP_PREP: snprintf(buf, n, TR("Preparação: carta para o {M} módulo (%d/2)", "Setup: card for your {M} module (%d/2)", "Preparación: carta para el {M} módulo (%d/2)"), G.p[d].nprep + 1); break;
+    case PH_ACTION: snprintf(buf, n, TR("Sua vez! Escolha 1 ação", "Your turn! Choose 1 action", "¡Tu turno! Elige 1 acción")); break;
+    case PH_FX: snprintf(buf, n, "%s \"%s\"", G.ctxBottom ? "{M}" : "{H}", card_name((int)G.ctxCard)); break;
     case PH_CONNECT_MOVE: {
         int under = G.b[(int)G.ctxBld].nstack >= 2 ? CARDS[G.b[(int)G.ctxBld].stack[G.b[(int)G.ctxBld].nstack - 2]].value : 3;
-        snprintf(buf, n, "Valor %d supera %d! Pousar colono?", CARDS[(int)G.ctxCard].value, under); break; }
-    case PH_ABILITY: snprintf(buf, n, "Habilidade {%d} %s", G.ctxBld, COLOR_NAME[(int)G.ctxBld]); break;
+        snprintf(buf, n, TR("Valor %d supera %d! Pousar colono?", "Value %d beats %d! Land a colonist?", "¡Valor %d supera %d! ¿Aterrizar colono?"), CARDS[(int)G.ctxCard].value, under); break; }
+    case PH_ABILITY: snprintf(buf, n, TR("Habilidade {%d} %s", "Ability {%d} %s", "Habilidad {%d} %s"), G.ctxBld, color_name((int)G.ctxBld)); break;
     case PH_CLEANUP:
-        if (G.p[d].nhand + G.p[d].nprep > 4) snprintf(buf, n, "Regra das 4 cartas: descarte da mão");
-        else snprintf(buf, n, "Regra das 4 cartas: escolha p/ o {M}");
+        if (G.p[d].nhand + G.p[d].nprep > 4) snprintf(buf, n, TR("Regra das 4 cartas: descarte da mão", "4-card rule: discard from hand", "Regla de 4 cartas: descarta de la mano"));
+        else snprintf(buf, n, TR("Regra das 4 cartas: escolha p/ o {M}", "4-card rule: choose for {M}", "Regla de 4 cartas: elige para el {M}"));
         break;
     default: buf[0] = 0;
     }
@@ -504,13 +525,13 @@ static void draw_game(void) {
     r_rect(0, 0, SCREEN_W, 21, RGBA(0, 0, 0, 120));
     char t[160];
     int bx = 4;
-    snprintf(t, sizeof t, "RODADA %d", G.round); bx += pill(bx, t, RGBA(255, 230, 200, 255)) + 4;
-    snprintf(t, sizeof t, "{K} Baralho %d", G.ndeck); bx += pill(bx, t, WHITE) + 4;
-    snprintf(t, sizeof t, "Descarte %d", G.ndiscard); pill(bx, t, WHITE);
+    snprintf(t, sizeof t, TR("RODADA %d", "ROUND %d", "RONDA %d"), G.round); bx += pill(bx, t, RGBA(255, 230, 200, 255)) + 4;
+    snprintf(t, sizeof t, TR("{K} Baralho %d", "{K} Deck %d", "{K} Mazo %d"), G.ndeck); bx += pill(bx, t, WHITE) + 4;
+    snprintf(t, sizeof t, TR("Descarte %d", "Discard %d", "Descarte %d"), G.ndiscard); pill(bx, t, WHITE);
     const char *hint = human_turn_now()
-        ? (undoOk && G.phase != PH_ACTION ? "{X} OK {O} Desfazer {Q} Carta {T} Info {Z}" : "{X} OK  {Q} Ver carta  {T} Inspecionar  {Z}")
-        : "{Q} Última carta  {T} Inspecionar  {Z}";
-    if (inspect) hint = "{T}/{O} Sair   < > Navegar";
+        ? (undoOk && G.phase != PH_ACTION ? TR("{X} OK {O} Desfazer {Q} Carta {T} Info {Z}", "{X} OK {O} Undo {Q} Card {T} Info {Z}", "{X} OK {O} Deshacer {Q} Carta {T} Info {Z}") : TR("{X} OK  {Q} Ver carta  {T} Inspecionar  {Z}", "{X} OK  {Q} View card  {T} Inspect  {Z}", "{X} OK  {Q} Ver carta  {T} Inspeccionar  {Z}"))
+        : TR("{Q} Última carta  {T} Inspecionar  {Z}", "{Q} Last card  {T} Inspect  {Z}", "{Q} Última carta  {T} Inspeccionar  {Z}");
+    if (inspect) hint = TR("{T}/{O} Sair   < > Navegar", "{T}/{O} Exit   < > Browse", "{T}/{O} Salir   < > Navegar");
     r_text(FONT_SMALL, SCREEN_W - 6 - r_text_w(FONT_SMALL, hint), 3, hint, RGBA(220, 220, 230, 255), 0);
 
     int hlBld = -1, hlHand = -1, hlPrep = -1, hlOppP = -1, hlOppK = -1;
@@ -542,8 +563,8 @@ static void draw_game(void) {
                 r_text_wrap(FONT_SMALL, dx, dy, dw, ex, RGBA(235, 235, 235, 255), 13);
             } else {
                 int p = inspectSel - 5; Score s; game_score(&G, p, &s);
-                snprintf(ex, sizeof ex, "%s: nave %d, Terra %d, energia %d, em Marte %d/7.\nPontos agora: %d (nave %d, {S} %d, {D} %d, bônus %d, energia %d).",
-                         PLAYER_NAME[p], G.p[p].ship, G.p[p].earth, G.p[p].energy, s.onMars, s.total, s.ship, s.star1, s.star2,
+                snprintf(ex, sizeof ex, TR("%s: nave %d, Terra %d, energia %d, em Marte %d/7.\nPontos agora: %d (nave %d, {S} %d, {D} %d, bônus %d, energia %d).", "%s: ship %d, Earth %d, energy %d, on Mars %d/7.\nPoints now: %d (ship %d, {S} %d, {D} %d, bonus %d, energy %d).", "%s: nave %d, Tierra %d, energía %d, en Marte %d/7.\nPuntos ahora: %d (nave %d, {S} %d, {D} %d, bonus %d, energía %d)."),
+                         player_name(p), G.p[p].ship, G.p[p].earth, G.p[p].energy, s.onMars, s.total, s.ship, s.star1, s.star2,
                          s.allFour + s.fourInOne, s.energy);
                 r_text_wrap(FONT_SMALL, dx, dy, dw, ex, RGBA(235, 235, 235, 255), 13);
             }
@@ -557,13 +578,13 @@ static void draw_game(void) {
                 const char *extra = NULL;
                 if (fo->kind == OPT_PLAY_PREP && CARDS[card].color != C_CONSTR) {
                     int beat = CARDS[card].value > game_top_value(&G, CARDS[card].color);
-                    extra = beat ? "Supera o valor visível: pode pousar 1 {C}!" : "Não supera o valor visível.";
+                    extra = beat ? TR("Supera o valor visível: pode pousar 1 {C}!", "Beats the visible value: you may land 1 {C}!", "Supera el valor visible: ¡puedes aterrizar 1 {C}!") : TR("Não supera o valor visível.", "Does not beat the visible value.", "No supera el valor visible.");
                 }
                 draw_card_detail(dx, dy, dw, card, extra);
             } else if (fo->kind == OPT_PLAY_OPP) {
                 int c = CARDS[G.p[fo->a].prep[fo->b]].color;
-                snprintf(ex, sizeof ex, "Carta oculta de %s. O dono pode usar a ação {M}; você usa a habilidade: %s",
-                         PLAYER_NAME[fo->a], BLD_ABILITY[c]);
+                snprintf(ex, sizeof ex, TR("Carta oculta de %s. O dono pode usar a ação {M}; você usa a habilidade: %s", "Hidden card of %s. The owner may use the {M} action; you use the ability: %s", "Carta oculta de %s. El dueño puede usar la acción {M}; tú usas la habilidad: %s"),
+                         player_name(fo->a), bld_ability(c));
                 r_text_wrap(FONT_SMALL, dx, dy, dw, ex, RGBA(235, 235, 235, 255), 13);
             } else if (G.phase == PH_FX) {
                 draw_card_detail(dx, dy, dw, G.ctxCard, NULL);
@@ -571,9 +592,9 @@ static void draw_game(void) {
                 building_info(hlBld, ex, sizeof ex);
                 r_text_wrap(FONT_SMALL, dx, dy, dw, ex, RGBA(235, 235, 235, 255), 13);
             } else if (fo->kind == OPT_TAKE_EARTH) {
-                r_text_wrap(FONT_SMALL, dx, dy, dw, "Pegue 1 colono seu da Terra e coloque-o na sua nave.", RGBA(235, 235, 235, 255), 13);
+                r_text_wrap(FONT_SMALL, dx, dy, dw, TR("Pegue 1 colono seu da Terra e coloque-o na sua nave.", "Take 1 of your colonists from Earth and put it on your ship.", "Toma 1 colono tuyo de la Tierra y ponlo en tu nave."), RGBA(235, 235, 235, 255), 13);
             } else {
-                r_text_wrap(FONT_SMALL, dx, dy, dw, "Use as setas para ver as opções.", RGBA(180, 180, 190, 255), 13);
+                r_text_wrap(FONT_SMALL, dx, dy, dw, TR("Use as setas para ver as opções.", "Use the arrows to browse the options.", "Usa las flechas para ver las opciones."), RGBA(180, 180, 190, 255), 13);
             }
         } else {
             draw_log(dx, dy, dw, 5);
@@ -584,12 +605,12 @@ static void draw_game(void) {
     int px = 270, py = 240, pw = 366, ph = 205;
     panel(px, py, pw, ph, RGBA(120, 70, 60, 255));
     if (G.phase == PH_OVER) {
-        r_text_center(FONT_MED, px + pw / 2, py + 80, "Fim de jogo!", RGBA(255, 220, 120, 255));
+        r_text_center(FONT_MED, px + pw / 2, py + 80, TR("Fim de jogo!", "Game over!", "¡Fin del juego!"), RGBA(255, 220, 120, 255));
         r_art(&ART_MASC[MASC_CHEER], px + pw / 2 - 36, py + 110, ART_MASC[MASC_CHEER].w, ART_MASC[MASC_CHEER].h, WHITE);
     } else if (curtain) {
-        r_chrome_center(px + pw / 2 - 30, py + 50, 20, PLAYER_NAME[G.decider], c_mul(COL_PLAYER[G.decider], 1.15f));
-        r_text_center(FONT_SMALL, px + pw / 2 - 30, py + 84, "Sua vez! Passe o controle", RGBA(230, 230, 230, 255));
-        r_text_center(FONT_SMALL, px + pw / 2 - 30, py + 100, "e pressione {X}", RGBA(230, 230, 230, 255));
+        r_chrome_center(px + pw / 2 - 30, py + 50, 20, player_name(G.decider), c_mul(COL_PLAYER[G.decider], 1.15f));
+        r_text_center(FONT_SMALL, px + pw / 2 - 30, py + 84, TR("Sua vez! Passe o controle", "Your turn! Pass the controller", "¡Tu turno! Pasa el mando"), RGBA(230, 230, 230, 255));
+        r_text_center(FONT_SMALL, px + pw / 2 - 30, py + 100, TR("e pressione {X}", "and press {X}", "y pulsa {X}"), RGBA(230, 230, 230, 255));
         const SprRect *m = &ART_MASC[MASC_THUMBS];
         r_art(m, px + pw - m->w - 10, py + ph - m->h - 10, m->w, m->h, WHITE);
     } else if (human_turn_now()) {
@@ -624,7 +645,7 @@ static void draw_game(void) {
         const SprRect *rb = &ART_MASC[MASC_ROBOT];
         if (G.decider >= 0) {
             int dots = (int)(frame / 15) % 4;
-            snprintf(t, sizeof t, "%s está pensando%.*s", PLAYER_NAME[G.decider], dots, "...");
+            snprintf(t, sizeof t, TR("%s está pensando%.*s", "%s is thinking%.*s", "%s está pensando%.*s"), player_name(G.decider), dots, "...");
             r_icon(IC_CHIP, px + 8, py + 6, 16, COL_PLAYER[G.decider]);
             r_text(FONT_MED, px + 28, py + 5, t, COL_PLAYER[G.decider], pw - 36);
         }
@@ -646,15 +667,15 @@ static void draw_game(void) {
     if (zoomCard >= 0 && !paused) {
         r_rect(0, 0, SCREEN_W, SCREEN_H, RGBA(0, 0, 0, 170));
         draw_card_full(220, 6, 200, zoomCard);
-        r_text_center(FONT_SMALL, 320, 310, "{Q} / {O} Fechar", WHITE);
+        r_text_center(FONT_SMALL, 320, 310, TR("{Q} / {O} Fechar", "{Q} / {O} Close", "{Q} / {O} Cerrar"), WHITE);
     }
 
     /* pausa */
     if (paused) {
         r_rect(0, 0, SCREEN_W, SCREEN_H, RGBA(0, 0, 0, 160));
         panel(190, 120, 260, 196, RGBA(255, 120, 80, 255));
-        r_chrome_center(320, 130, 18, "PAUSA", RGBA(255, 210, 170, 255));
-        const char *it[5] = { "Continuar", "Música", "Efeitos", "Como jogar", "Sair para o título" };
+        r_chrome_center(320, 130, 18, TR("PAUSA", "PAUSE", "PAUSA"), RGBA(255, 210, 170, 255));
+        const char *it[5] = { TR("Continuar", "Continue", "Continuar"), TR("Música", "Music", "Música"), TR("Efeitos", "Effects", "Efectos"), TR("Como jogar", "How to play", "Cómo jugar"), TR("Sair para o título", "Quit to title", "Salir al título") };
         for (int i = 0; i < 5; i++) {
             int yy = 166 + i * 28;
             if (i == pauseSel) r_rect(204, yy - 3, 232, 22, RGBA(200, 80, 50, 200));
@@ -708,16 +729,16 @@ static void apply_option(int idx) {
     int card = -1;
     const char *how = NULL;
     if (G.phase == PH_ACTION) {
-        if (o.kind == OPT_PLAY_HAND) { card = G.p[who].hand[o.a]; how = "joga da mão"; }
-        else if (o.kind == OPT_PLAY_PREP) { card = G.p[who].prep[o.a]; how = "conecta do módulo"; }
-        else if (o.kind == OPT_PLAY_OPP) { card = G.p[o.a].prep[o.b]; how = "revela módulo alheio"; }
+        if (o.kind == OPT_PLAY_HAND) { card = G.p[who].hand[o.a]; how = TR("joga da mão", "plays from hand", "juega de la mano"); }
+        else if (o.kind == OPT_PLAY_PREP) { card = G.p[who].prep[o.a]; how = TR("conecta do módulo", "connects from module", "conecta del módulo"); }
+        else if (o.kind == OPT_PLAY_OPP) { card = G.p[o.a].prep[o.b]; how = TR("revela módulo alheio", "reveals a rival module", "revela módulo ajeno"); }
     }
     if (card >= 0) {
         lastCard = card;
         if (!G.p[who].human || autoplayHuman || o.kind == OPT_PLAY_OPP) {
             popupCard = card;
             popupUntil = SDL_GetTicks() + (cfgSpeed == 0 ? 1700 : cfgSpeed == 1 ? 900 : 500);
-            snprintf(popupText, sizeof popupText, "%s %s", PLAYER_NAME[who], how);
+            snprintf(popupText, sizeof popupText, "%s %s", player_name(who), how);
             if (cfgSpeed == 0 && !G.p[who].human) cpuReadyAt = popupUntil;
         }
     }
@@ -822,7 +843,7 @@ static void update_game(void) {
         if (pressed[B_BACK]) {
             if (undoOk && G.phase != PH_ACTION) {
                 G = undoSnap; optsDirty = 1; optSel = 0; audio_sfx(SFX_BACK);
-                game_log(&G, "Jogada desfeita.");
+                game_log(&G, TR("Jogada desfeita.", "Move undone.", "Jugada deshecha."));
             } else audio_sfx(SFX_ERROR);
         }
         if (pressed[B_OK] && nopts > 0) apply_option(optSel);
@@ -847,12 +868,13 @@ static void update_game(void) {
 static void draw_title(void) {
     r_title(&TITLE_KEYART, 0, 0, SCREEN_W, SCREEN_H, WHITE);
     /* menu */
-    const char *items[4] = { "Novo jogo", "Como jogar", "Créditos", "Sair" };
-    int mx = 452, my = 300, mw = 178, mh = 132;
+    const char *items[5] = { TR("Novo jogo", "New game", "Nuevo juego"), TR("Como jogar", "How to play", "Cómo jugar"),
+                             TR("Idioma", "Language", "Idioma"), TR("Créditos", "Credits", "Créditos"), TR("Sair", "Quit", "Salir") };
+    int mx = 452, my = 272, mw = 178, mh = 161;
     r_rrect(mx - 2, my - 2, mw + 4, mh + 4, RGBA(10, 6, 20, 200));
     r_rrect(mx, my, mw, mh, RGBA(30, 20, 50, 210));
     r_frame(mx, my, mw, mh, RGBA(255, 150, 80, 200));
-    for (int i = 0; i < 4; i++) {
+    for (int i = 0; i < 5; i++) {
         int y = my + 10 + i * 29;
         if (i == titleSel) {
             r_rrect(mx + 6, y - 4, mw - 12, 24, RGBA(220, 80, 40, 220 + (int)(30 * sinf(frame * 0.15f))));
@@ -862,20 +884,56 @@ static void draw_title(void) {
     }
     if ((frame / 30) % 2) {
         r_rrect(214, 420, 212, 20, RGBA(10, 6, 20, 170));
-        r_text_center(FONT_SMALL, 320, 423, "Pressione {X} ou {Z}", RGBA(255, 230, 190, 255));
+        r_text_center(FONT_SMALL, 320, 423, TR("Pressione {X} ou {Z}", "Press {X} or {Z}", "Pulsa {X} o {Z}"), RGBA(255, 230, 190, 255));
     }
-    r_text(FONT_SMALL, 7, 433, "v1.1 Homebrew PS2", RGBA(0, 0, 0, 200), 0);
-    r_text(FONT_SMALL, 6, 432, "v1.1 Homebrew PS2", RGBA(255, 230, 210, 255), 0);
+    r_text(FONT_SMALL, 7, 433, "v1.2 Homebrew PS2", RGBA(0, 0, 0, 200), 0);
+    r_text(FONT_SMALL, 6, 432, "v1.2 Homebrew PS2", RGBA(255, 230, 210, 255), 0);
+}
+
+/* ------------------------------------------------------------------ */
+/* escolha de idioma (primeira tela)                                    */
+
+static void draw_lang(void) {
+    r_title(&TITLE_KEYART, 0, 0, SCREEN_W, SCREEN_H, WHITE);
+    r_rect(0, 0, SCREEN_W, SCREEN_H, RGBA(5, 3, 15, 150));
+    static const char *NAMES[3] = { "Português", "English", "Español" };
+    static const char *SUB[3] = { "Idioma principal", "Language", "Idioma" };
+    static const char *ASK[3] = { "Escolha o idioma", "Choose your language", "Elige tu idioma" };
+    int px = 170, py = 150, pw = 300, ph = 200;
+    r_rrect(px - 2, py - 2, pw + 4, ph + 4, RGBA(10, 6, 20, 230));
+    r_rrect(px, py, pw, ph, RGBA(30, 20, 50, 235));
+    r_frame(px, py, pw, ph, RGBA(255, 150, 80, 220));
+    r_text_center(FONT_MED, 320, py + 10, ASK[langSel], RGBA(255, 210, 160, 255));
+    for (int i = 0; i < 3; i++) {
+        int y = py + 44 + i * 46;
+        if (i == langSel) {
+            r_rrect(px + 14, y - 4, pw - 28, 40, RGBA(220, 80, 40, 220 + (int)(30 * sinf(frame * 0.15f))));
+            r_icon(IC_ARROW, px + 24, y + 8, 16, WHITE);
+        }
+        r_text_scale(1.3f);
+        r_text(FONT_MED, px + 52, y, NAMES[i], WHITE, 0);
+        r_text_scale(1.0f);
+        r_text(FONT_SMALL, px + 54, y + 21, SUB[i], RGBA(220, 200, 190, 255), 0);
+    }
+    r_text_center(FONT_SMALL, 320, py + ph + 12, "{X} OK", WHITE);
+}
+
+static void update_lang(void) {
+    if (pressed[B_UP]) { langSel = (langSel + 2) % 3; audio_sfx(SFX_MOVE); }
+    if (pressed[B_DOWN]) { langSel = (langSel + 1) % 3; audio_sfx(SFX_MOVE); }
+    if (pressed[B_OK] || pressed[B_START]) { g_lang = langSel; audio_sfx(SFX_OK); scene = SC_TITLE; }
+    if (pressed[B_BACK] && frame > 60) { audio_sfx(SFX_BACK); scene = SC_TITLE; }
 }
 
 static void update_title(void) {
-    if (pressed[B_UP]) { titleSel = (titleSel + 3) % 4; audio_sfx(SFX_MOVE); }
-    if (pressed[B_DOWN]) { titleSel = (titleSel + 1) % 4; audio_sfx(SFX_MOVE); }
+    if (pressed[B_UP]) { titleSel = (titleSel + 4) % 5; audio_sfx(SFX_MOVE); }
+    if (pressed[B_DOWN]) { titleSel = (titleSel + 1) % 5; audio_sfx(SFX_MOVE); }
     if (pressed[B_OK] || pressed[B_START]) {
         audio_sfx(SFX_OK);
         if (titleSel == 0) { scene = SC_SETUP; setupSel = 0; }
         else if (titleSel == 1) { scene = SC_RULES; rulesReturn = SC_TITLE; rulesPage = 0; }
-        else if (titleSel == 2) scene = SC_CREDITS;
+        else if (titleSel == 2) { scene = SC_LANG; langSel = g_lang; }
+        else if (titleSel == 3) scene = SC_CREDITS;
         else quitReq = 1;
     }
 }
@@ -887,7 +945,7 @@ static void update_title(void) {
 static void draw_setup(void) {
     draw_space();
     r_mars(520, 320, 120);
-    r_chrome(30, 22, 30, "NOVA MISSÃO", RGBA(255, 210, 180, 255));
+    r_chrome(30, 22, 30, TR("NOVA MISSÃO", "NEW MISSION", "NUEVA MISIÓN"), RGBA(255, 210, 180, 255));
     panel(24, 70, 420, 340, RGBA(200, 90, 60, 255));
     char t[64];
     for (int i = 0; i < SETUP_ROWS; i++) {
@@ -896,32 +954,32 @@ static void draw_setup(void) {
         if (i == setupSel) r_rrect(32, y - 5, 404, 27, RGBA(200, 70, 40, 190));
         Color lc = dis ? RGBA(110, 110, 120, 255) : WHITE;
         if (i == 0) {
-            r_text(FONT_MED, 44, y, "Jogadores", lc, 0);
+            r_text(FONT_MED, 44, y, TR("Jogadores", "Players", "Jugadores"), lc, 0);
             snprintf(t, sizeof t, "< %d >", cfgNp);
         } else if (i <= 4) {
             int p = i - 1;
-            if (dis) r_text(FONT_MED, 44, y, PLAYER_NAME[p], lc, 0);
-            else r_chrome(44, y + 1, 14, PLAYER_NAME[p], c_mul(COL_PLAYER[p], 1.15f));
+            if (dis) r_text(FONT_MED, 44, y, player_name(p), lc, 0);
+            else r_chrome(44, y + 1, 14, player_name(p), c_mul(COL_PLAYER[p], 1.15f));
             snprintf(t, sizeof t, "< %s >", SLOT_NAME[cfgSlot[p]]);
         } else if (i == 5) {
-            r_text(FONT_MED, 44, y, "Variante: draft de cartas", lc, 0);
-            snprintf(t, sizeof t, "< %s >", cfgDraft ? "Sim" : "Não");
+            r_text(FONT_MED, 44, y, TR("Variante: draft de cartas", "Variant: card draft", "Variante: draft de cartas"), lc, 0);
+            snprintf(t, sizeof t, "< %s >", cfgDraft ? TR("Sim", "Yes", "Sí") : TR("Não", "No", "No"));
         } else if (i == 6) {
-            r_text(FONT_MED, 44, y, "Velocidade da CPU", lc, 0);
+            r_text(FONT_MED, 44, y, TR("Velocidade da CPU", "CPU speed", "Velocidad de la CPU"), lc, 0);
             snprintf(t, sizeof t, "< %s >", SPEED_NAME[cfgSpeed]);
         } else if (i == 7 || i == 8) {
-            r_text(FONT_MED, 44, y, i == 7 ? "Volume da música" : "Volume dos efeitos", lc, 0);
+            r_text(FONT_MED, 44, y, i == 7 ? TR("Volume da música", "Music volume", "Volumen de la música") : TR("Volume dos efeitos", "Effects volume", "Volumen de efectos"), lc, 0);
             volume_bar(316, y + 1, i == 7 ? cfgMusic : cfgSfx);
             continue;
         } else {
-            r_text_center(FONT_MED, 234, y, "{R} INICIAR MISSÃO", RGBA(255, 230, 160, 255));
+            r_text_center(FONT_MED, 234, y, TR("{R} INICIAR MISSÃO", "{R} START MISSION", "{R} INICIAR MISIÓN"), RGBA(255, 230, 160, 255));
             continue;
         }
         r_text(FONT_MED, 428 - r_text_w(FONT_MED, t), y, t, lc, 0);
     }
-    r_text(FONT_SMALL, 30, 420, "{X} Confirmar   < > Alterar   {O} Voltar", RGBA(220, 220, 230, 255), 0);
+    r_text(FONT_SMALL, 30, 420, TR("{X} Confirmar   < > Alterar   {O} Voltar", "{X} Confirm   < > Change   {O} Back", "{X} Confirmar   < > Cambiar   {O} Volver"), RGBA(220, 220, 230, 255), 0);
     r_text_wrap(FONT_SMALL, 462, 80, 168,
-                "Vários humanos jogam passando o controle (hot-seat). As cartas ficam ocultas entre os turnos.",
+                TR("Vários humanos jogam passando o controle (hot-seat). As cartas ficam ocultas entre os turnos.", "Several humans play by passing the controller (hot-seat). Cards stay hidden between turns.", "Varios humanos juegan pasando el mando (hot-seat). Las cartas quedan ocultas entre turnos."),
                 RGBA(220, 210, 200, 255), 14);
     const SprRect *m = &ART_MASC[MASC_THUMBS];
     r_art(m, 470, 170, m->w * 3 / 2, m->h * 3 / 2, WHITE);
@@ -954,18 +1012,18 @@ static void update_setup(void) {
 static void draw_over(void) {
     draw_space();
     int win = game_winners(&G);
-    r_chrome_center(320, 12, 28, "MISSÃO CONCLUÍDA", RGBA(255, 220, 190, 255));
+    r_chrome_center(320, 12, 28, TR("MISSÃO CONCLUÍDA", "MISSION COMPLETE", "MISIÓN CUMPLIDA"), RGBA(255, 220, 190, 255));
     char t[96];
     int nw = 0, wp = 0;
     for (int i = 0; i < G.np; i++) if (win >> i & 1) { nw++; wp = i; }
-    if (nw == 1) snprintf(t, sizeof t, "Vitória de %s!", PLAYER_NAME[wp]);
-    else snprintf(t, sizeof t, "Empate! A vitória é compartilhada.");
+    if (nw == 1) snprintf(t, sizeof t, TR("Vitória de %s!", "%s wins!", "¡Victoria de %s!"), player_name(wp));
+    else snprintf(t, sizeof t, TR("Empate! A vitória é compartilhada.", "Tie! The victory is shared.", "¡Empate! La victoria es compartida."));
     r_text_center(FONT_MED, 320, 54, t, nw == 1 ? COL_PLAYER[wp] : RGBA(255, 220, 120, 255));
 
     int tx = 40, ty = 84, cw = (560 - 150) / G.np;
     panel(tx - 10, ty - 6, 580, 290, RGBA(200, 90, 60, 255));
-    const char *rows[8] = { "Colonos na nave (1)", "Colonos em {S} (2)", "Colonos em {D} (4)",
-                            "Nos 4 edifícios (+2)", "4+ num edifício (+3)", "Maior energia (+1)", "Colonos em Marte", "TOTAL" };
+    const char *rows[8] = { TR("Colonos na nave (1)", "Colonists on ship (1)", "Colonos en la nave (1)"), TR("Colonos em {S} (2)", "Colonists on {S} (2)", "Colonos en {S} (2)"), TR("Colonos em {D} (4)", "Colonists on {D} (4)", "Colonos en {D} (4)"),
+                            TR("Nos 4 edifícios (+2)", "In all 4 buildings (+2)", "En los 4 edificios (+2)"), TR("4+ num edifício (+3)", "4+ in one building (+3)", "4+ en un edificio (+3)"), TR("Maior energia (+1)", "Most energy (+1)", "Más energía (+1)"), TR("Colonos em Marte", "Colonists on Mars", "Colonos en Marte"), "TOTAL" };
     for (int r = 0; r < 8; r++) {
         int y = ty + 34 + r * 28;
         if (r == 7) r_rect(tx - 4, y - 5, 568, 1, RGBA(255, 255, 255, 80));
@@ -974,8 +1032,8 @@ static void draw_over(void) {
     for (int p = 0; p < G.np; p++) {
         int x = tx + 150 + p * cw + cw / 2;
         Score s; game_score(&G, p, &s);
-        if (win >> p & 1) r_icon(IC_CROWN, x - r_text_w(FONT_MED, PLAYER_NAME[p]) / 2 - 26, ty + 6, 22, RGBA(255, 210, 60, 255));
-        r_text_center(FONT_MED, x, ty + 10, PLAYER_NAME[p], COL_PLAYER[p]);
+        if (win >> p & 1) r_icon(IC_CROWN, x - r_text_w(FONT_MED, player_name(p)) / 2 - 26, ty + 6, 22, RGBA(255, 210, 60, 255));
+        r_text_center(FONT_MED, x, ty + 10, player_name(p), COL_PLAYER[p]);
         int vals[8] = { s.ship, s.star1, s.star2, s.allFour, s.fourInOne, s.energy, s.onMars, s.total };
         for (int r = 0; r < 8; r++) {
             snprintf(t, sizeof t, "%d", vals[r]);
@@ -983,14 +1041,14 @@ static void draw_over(void) {
                           r == 7 ? RGBA(255, 220, 120, 255) : r == 6 ? RGBA(150, 150, 160, 255) : RGBA(255, 255, 255, 255));
         }
     }
-    r_text_center(FONT_SMALL, 320, 380, "Empate: vence quem tiver mais colonos em Marte.", RGBA(170, 170, 180, 255));
+    r_text_center(FONT_SMALL, 320, 380, TR("Empate: vence quem tiver mais colonos em Marte.", "Tie: most colonists on Mars wins.", "Empate: gana quien tenga más colonos en Marte."), RGBA(170, 170, 180, 255));
     {
         const SprRect *a = &ART_MASC[MASC_CHEER], *b = &ART_MASC[MASC_THUMBS];
         int bob = (int)(4 * sinf(frame * 0.15f));
         r_art(a, 4, 330 + bob, a->w * 5 / 4, a->h * 5 / 4, WHITE);
         r_art(b, 640 - b->w * 5 / 4 - 4, 330 - bob, b->w * 5 / 4, b->h * 5 / 4, WHITE);
     }
-    const char *it[2] = { "Jogar novamente", "Menu principal" };
+    const char *it[2] = { TR("Jogar novamente", "Play again", "Jugar otra vez"), TR("Menu principal", "Main menu", "Menú principal") };
     for (int i = 0; i < 2; i++) {
         int x = 190 + i * 260;
         if (i == overSel) r_rrect(x - 90, 404, 180, 26, RGBA(200, 70, 40, 220));
@@ -1007,10 +1065,13 @@ static void update_over(void) {
 /* ------------------------------------------------------------------ */
 /* regras e creditos                                                    */
 
-static const char *RULES_TITLE[] = {
-    "Objetivo", "Preparação", "As cartas", "Seu turno", "Jogar do módulo", "Regra das 4 cartas", "Edifícios", "Fim e pontuação", "Controles"
+static const char *RULES_TITLES[LANG_COUNT][9] = {
+    { "Objetivo", "Preparação", "As cartas", "Seu turno", "Jogar do módulo", "Regra das 4 cartas", "Edifícios", "Fim e pontuação", "Controles" },
+    { "Goal", "Setup", "The cards", "Your turn", "Playing from the module", "The 4-card rule", "Buildings", "End and scoring", "Controls" },
+    { "Objetivo", "Preparación", "Las cartas", "Tu turno", "Jugar del módulo", "Regla de las 4 cartas", "Edificios", "Final y puntuación", "Controles" },
 };
-static const char *RULES_TEXT[] = {
+static const char *RULES_TEXTS[LANG_COUNT][9] = {
+    {
     "Cada jogador comanda uma agência espacial com 7 colonos. Use cartas de projeto para levar colonos da Terra para a sua nave {R} e da nave para os edifícios de Marte.\n\n"
     "Quem distribuir melhor seus colonos fará mais pontos e vencerá. Colonos nos espaços {D} valem mais, mas há poucas vagas!",
     "Cada jogador começa com 1 {C} na nave, 6 {C} na Terra e 1 {E} de energia.\n\n"
@@ -1050,7 +1111,86 @@ static const char *RULES_TEXT[] = {
     "Direcional: navegar   L1/R1: rolar listas   START: pausa\n\n"
     "No PC: setas, Enter/Z (confirmar), Esc/X (voltar), Tab (inspecionar), P (pausa).\n\n"
     "Dica: a coluna de pontos de cada jogador mostra a pontuação se o jogo acabasse agora."
+    },
+    {
+    "Each player commands a space agency with 7 colonists. Use project cards to bring colonists from Earth to your ship {R} and from the ship to the buildings on Mars.\n\n"
+    "Whoever places their colonists best scores the most points and wins. Colonists on {D} spaces are worth more, but there are few slots!",
+    "Each player starts with 1 {C} on the ship, 6 {C} on Earth and 1 {E} energy.\n\n"
+    "Everyone gets 4 project cards and picks 2 for their {M} prep module (face down; others only see the color). The other 2 stay in your {H} hand.\n\n"
+    "Draft variant: everyone gets 5 cards, keeps 1 and passes the rest, until they have 4.",
+    "Each project card has a COLOR (the building where it is connected), a VALUE from 0 to 7 and two actions.\n\n"
+    "{H} HAND ACTION: used when you play the card from your hand.\n"
+    "{M} MODULE ACTION: used when the card is connected to a building from a module.\n\n"
+    "The value only matters from the module: if it beats the building's visible value, you land a colonist.\n\n"
+    "Press {Q} during the game to see any card full size.",
+    "On your turn, do ONE of these actions:\n\n"
+    "{H} Play a card from your hand: use its top action and discard it.\n"
+    "{M} Play a card from your module (see next page).\n"
+    "{M} Play a card from another player's module.\n"
+    "{W} Bring 1 of your {C} from Earth to the ship.\n"
+    "{E} Discard 1 card (hand or module) to gain 1 energy (max. 7).",
+    "The card is connected to the building of the same color, on top of the previous ones. Then, in order:\n\n"
+    "1. If its value is HIGHER than the card below (or than 3, if it is the first), you may land 1 {C} from your ship on that building's {S}.\n"
+    "2. You may use the card's bottom {M} action.\n"
+    "3. You may use the building's ability.\n\n"
+    "If you play a card from ANOTHER player's module: no landing; the card's OWNER may use the {M} action, and you use the building's ability.",
+    "At the end of each turn, everyone (starting with whoever played) ends with exactly 4 cards: 2 in hand and 2 in the module.\n\n"
+    "More than 4: discard from hand. Fewer than 4: draw from the deck. Module with fewer than 2: move cards from hand to module (never the other way!).\n\n"
+    "If the deck runs out, the covered cards in the buildings and the discard pile form a new deck.",
+    "{0} Ecosystem: move any {C} of any player between {S} and {D} in a building.\n"
+    "{1} Energy: gain 1 {E}.\n"
+    "{2} Science: bring 1 of your {C} from Earth to the ship.\n"
+    "{3} Water: put 1 of your cards at the bottom of the deck.\n"
+    "{4} Construction: move 1 {C} from the ship to the {S} of any building (holds no colonists).\n\n"
+    "{D} space: max. 1 colonist with 2 players, 2 colonists with 3-4 players.",
+    "At the end of a round, if someone has all 7 colonists on Mars, the game ends.\n\n"
+    "1 point per {C} on the ship, 2 per {C} on {S}, 4 per {C} on {D}.\n"
+    "+2 for having colonists in all 4 buildings. +3 for having 4+ colonists in one building.\n"
+    "+1 for whoever has the most energy (ties: all score).\n"
+    "Colonists on Earth score nothing. Tie: most colonists on Mars.",
+    "Controls"
+    },
+    {
+    "Cada jugador dirige una agencia espacial con 7 colonos. Usa cartas de proyecto para llevar colonos de la Tierra a tu nave {R} y de la nave a los edificios de Marte.\n\n"
+    "Quien mejor reparta sus colonos sumará más puntos y ganará. Los colonos en espacios {D} valen más, ¡pero hay pocas plazas!",
+    "Cada jugador empieza con 1 {C} en la nave, 6 {C} en la Tierra y 1 {E} de energía.\n\n"
+    "Cada uno recibe 4 cartas de proyecto y elige 2 para su {M} módulo de preparación (boca abajo; los demás solo ven el color). Las otras 2 quedan en la {H} mano.\n\n"
+    "Variante draft: cada uno recibe 5 cartas, se queda 1 y pasa el resto, hasta tener 4.",
+    "Cada carta de proyecto tiene un COLOR (el edificio donde se conecta), un VALOR de 0 a 7 y dos acciones.\n\n"
+    "{H} ACCIÓN DE MANO: se usa cuando juegas la carta desde la mano.\n"
+    "{M} ACCIÓN DE MÓDULO: se usa cuando la carta se conecta a un edificio desde un módulo.\n\n"
+    "El valor solo importa en el módulo: si supera el valor visible del edificio, aterrizas un colono.\n\n"
+    "Pulsa {Q} durante el juego para ver cualquier carta en grande.",
+    "En tu turno haz UNA de estas acciones:\n\n"
+    "{H} Jugar una carta de la mano: usa su acción de arriba y descártala.\n"
+    "{M} Jugar una carta de tu módulo (ver la página siguiente).\n"
+    "{M} Jugar una carta del módulo de otro jugador.\n"
+    "{W} Traer 1 {C} tuyo de la Tierra a la nave.\n"
+    "{E} Descartar 1 carta (mano o módulo) para ganar 1 energía (máx. 7).",
+    "La carta se conecta al edificio del mismo color, encima de las anteriores. Después, en orden:\n\n"
+    "1. Si su valor es MAYOR que el de la carta de abajo (o que 3, si es la primera), puedes aterrizar 1 {C} de la nave en el {S} de ese edificio.\n"
+    "2. Puedes usar la acción de abajo {M} de la carta.\n"
+    "3. Puedes usar la habilidad del edificio.\n\n"
+    "Si juegas la carta del módulo de OTRO jugador: no hay aterrizaje; el DUEÑO de la carta puede usar la acción {M}, y tú usas la habilidad del edificio.",
+    "Al final de cada turno, todos (empezando por quien jugó) quedan con exactamente 4 cartas: 2 en la mano y 2 en el módulo.\n\n"
+    "Más de 4: descarta de la mano. Menos de 4: roba del mazo. Módulo con menos de 2: pasa cartas de la mano al módulo (¡nunca al revés!).\n\n"
+    "Si se acaba el mazo, las cartas cubiertas de los edificios y el descarte forman un mazo nuevo.",
+    "{0} Ecosistema: mueve cualquier {C} de cualquier jugador entre {S} y {D} en un edificio.\n"
+    "{1} Energía: gana 1 {E}.\n"
+    "{2} Ciencia: trae 1 {C} tuyo de la Tierra a la nave.\n"
+    "{3} Agua: pon 1 carta tuya al fondo del mazo.\n"
+    "{4} Construcción: mueve 1 {C} de la nave al {S} de cualquier edificio (no aloja colonos).\n\n"
+    "Espacio {D}: máx. 1 colono con 2 jugadores, 2 colonos con 3-4 jugadores.",
+    "Al final de una ronda, si alguien tiene sus 7 colonos en Marte, el juego termina.\n\n"
+    "1 punto por {C} en la nave, 2 por {C} en {S}, 4 por {C} en {D}.\n"
+    "+2 por tener colonos en los 4 edificios. +3 por tener 4+ colonos en un mismo edificio.\n"
+    "+1 para quien tenga más energía (empates: todos ganan).\n"
+    "Los colonos en la Tierra no puntúan. Empate: más colonos en Marte.",
+    "Controles"
+    },
 };
+#define RULES_TITLE RULES_TITLES[g_lang]
+#define RULES_TEXT RULES_TEXTS[g_lang]
 #define NRULES 9
 
 static void draw_rules(void) {
@@ -1060,20 +1200,20 @@ static void draw_rules(void) {
     if (controls) {
         /* tela de controles: usa a textura TITLE (botoes); titulo com fonte normal ampliada */
         r_text_scale(2.0f);
-        r_text(FONT_MED, 30, 14, "COMO JOGAR", RGBA(255, 230, 210, 255), 0);
+        r_text(FONT_MED, 30, 14, TR("COMO JOGAR", "HOW TO PLAY", "CÓMO JUGAR"), RGBA(255, 230, 210, 255), 0);
         r_text_scale(1.0f);
     } else {
-        r_chrome(30, 18, 28, "COMO JOGAR", RGBA(255, 210, 180, 255));
+        r_chrome(30, 18, 28, TR("COMO JOGAR", "HOW TO PLAY", "CÓMO JUGAR"), RGBA(255, 210, 180, 255));
     }
     r_text(FONT_MED, 600 - r_text_w(FONT_MED, t), 28, t, RGBA(220, 200, 190, 255), 0);
     panel(24, 64, 592, 340, RGBA(200, 90, 60, 255));
     r_text(FONT_MED, 40, 76, RULES_TITLE[rulesPage], RGBA(255, 190, 140, 255), 0);
     if (controls) {
-        static const struct { int pad; int x, y; const char *txt; } C[] = {
-            { PAD_DPAD, 46, 110, "Navegar" }, { PAD_CROSS, 330, 104, "Confirmar" },
-            { PAD_CIRCLE, 330, 150, "Voltar / desfazer" }, { PAD_TRI, 330, 196, "Inspecionar tabuleiro" },
-            { PAD_SQUARE, 330, 242, "Ver carta em tamanho grande" }, { PAD_L1, 40, 240, "Rolar lista" },
-            { PAD_R1, 150, 240, "Rolar lista" }, { PAD_START, 46, 304, "Pausa" },
+        const struct { int pad; int x, y; const char *txt; } C[] = {
+            { PAD_DPAD, 46, 110, TR("Navegar", "Navigate", "Navegar") }, { PAD_CROSS, 330, 104, TR("Confirmar", "Confirm", "Confirmar") },
+            { PAD_CIRCLE, 330, 150, TR("Voltar / desfazer", "Back / undo", "Volver / deshacer") }, { PAD_TRI, 330, 196, TR("Inspecionar tabuleiro", "Inspect board", "Inspeccionar tablero") },
+            { PAD_SQUARE, 330, 242, TR("Ver carta em tamanho grande", "View card full size", "Ver carta en grande") }, { PAD_L1, 40, 240, TR("Rolar lista", "Scroll list", "Desplazar lista") },
+            { PAD_R1, 150, 240, TR("Rolar lista", "Scroll list", "Desplazar lista") }, { PAD_START, 46, 304, TR("Pausa", "Pause", "Pausa") },
         };
         for (unsigned i = 0; i < sizeof C / sizeof C[0]; i++) {
             const SprRect *r = &TITLE_PAD[C[i].pad];
@@ -1083,7 +1223,7 @@ static void draw_rules(void) {
                 r_text(FONT_SMALL, C[i].x + 4, C[i].y + r->h + 2, C[i].txt, WHITE, 0);
             else r_text(FONT_SMALL, C[i].x + r->w + 10, C[i].y + 13, C[i].txt, WHITE, 0);
         }
-        r_text_wrap(FONT_SMALL, 40, 372, 560, "No PC: setas, Enter/Z (confirmar), Esc/X (voltar), Tab (inspecionar), R (ver carta), P (pausa).",
+        r_text_wrap(FONT_SMALL, 40, 372, 560, TR("No PC: setas, Enter/Z (confirmar), Esc/X (voltar), Tab (inspecionar), R (ver carta), P (pausa).", "On PC: arrows, Enter/Z (confirm), Esc/X (back), Tab (inspect), R (view card), P (pause).", "En PC: flechas, Enter/Z (confirmar), Esc/X (volver), Tab (inspeccionar), R (ver carta), P (pausa)."),
                     RGBA(200, 200, 210, 255), 15);
     } else if (rulesPage == 2) {
         /* anatomia da carta */
@@ -1094,7 +1234,7 @@ static void draw_rules(void) {
         const SprRect *m = &ART_MASC[rulesPage % 2 ? MASC_ROBOT : MASC_POINT];
         r_art(m, 600 - m->w, 400 - m->h - 4, m->w, m->h, WHITE);
     }
-    r_text(FONT_SMALL, 30, 418, "< > Página   {O} Voltar", RGBA(220, 220, 230, 255), 0);
+    r_text(FONT_SMALL, 30, 418, TR("< > Página   {O} Voltar", "< > Page   {O} Back", "< > Página   {O} Volver"), RGBA(220, 220, 230, 255), 0);
 }
 
 static void update_rules(void) {
@@ -1109,10 +1249,10 @@ static void update_rules(void) {
 static void draw_credits(void) {
     draw_space();
     r_mars(470, 90, 120);
-    r_chrome(30, 22, 30, "CRÉDITOS", RGBA(255, 210, 180, 255));
+    r_chrome(30, 22, 30, TR("CRÉDITOS", "CREDITS", "CRÉDITOS"), RGBA(255, 210, 180, 255));
     panel(24, 70, 400, 320, RGBA(200, 90, 60, 255));
     r_text_wrap(FONT_SMALL, 40, 86, 370,
-        "MARS COLONY: PROJECT RED PS2\n"
+        TR("MARS COLONY: PROJECT RED PS2\n"
         "Homebrew para PlayStation 2 feito com PS2SDK, gsKit e SDL2.\n\n"
         "Mecânicas adaptadas das regras do jogo de cartas Pocket Mars (design de Michał Jagodziński, Board&Dice), "
         "fornecidas pelo jogador. Nomes, cartas, efeitos e código deste jogo são originais.\n\n"
@@ -1120,11 +1260,27 @@ static void draw_credits(void) {
         "Fonte de texto: DejaVu Sans (licença livre).\n"
         "Música: 3 trilhas espaciais originais (Horizonte Vermelho, Colônia à Deriva e fanfarra de vitória) e efeitos de ficção científica, sintetizados em tempo real.\n\n"
         "Projeto de fã, sem fins comerciais.",
+        "MARS COLONY: PROJECT RED PS2\n"
+        "PlayStation 2 homebrew made with PS2SDK, gsKit and SDL2.\n\n"
+        "Mechanics adapted from the rules of the card game Pocket Mars (designed by Michał Jagodziński, Board&Dice), "
+        "provided by the player. Names, cards, effects and code of this game are original.\n\n"
+        "Card art, characters, logo and chrome font: provided by the player.\n"
+        "Text font: DejaVu Sans (free license).\n"
+        "Music: 3 original space tracks (Red Horizon, Drifting Colony and victory fanfare) and sci-fi effects, synthesized in real time.\n\n"
+        "Fan project, non-commercial.",
+        "MARS COLONY: PROJECT RED PS2\n"
+        "Homebrew para PlayStation 2 hecho con PS2SDK, gsKit y SDL2.\n\n"
+        "Mecánicas adaptadas de las reglas del juego de cartas Pocket Mars (diseño de Michał Jagodziński, Board&Dice), "
+        "proporcionadas por el jugador. Nombres, cartas, efectos y código de este juego son originales.\n\n"
+        "Arte de las cartas, personajes, logotipo y fuente cromada: proporcionados por el jugador.\n"
+        "Fuente de texto: DejaVu Sans (licencia libre).\n"
+        "Música: 3 pistas espaciales originales (Horizonte Rojo, Colonia a la Deriva y fanfarria de victoria) y efectos de ciencia ficción, sintetizados en tiempo real.\n\n"
+        "Proyecto de fan, sin fines comerciales."),
         RGBA(235, 235, 235, 255), 16);
     const SprRect *a = &ART_MASC[MASC_CHEER], *b = &ART_MASC[MASC_ROBOT];
     r_art(a, 440, 300, a->w * 3 / 2, a->h * 3 / 2, WHITE);
     r_art(b, 540, 320, b->w * 5 / 4, b->h * 5 / 4, WHITE);
-    r_text(FONT_SMALL, 30, 418, "{O} Voltar", RGBA(220, 220, 230, 255), 0);
+    r_text(FONT_SMALL, 30, 418, TR("{O} Voltar", "{O} Back", "{O} Volver"), RGBA(220, 220, 230, 255), 0);
 }
 
 /* ------------------------------------------------------------------ */
@@ -1137,6 +1293,7 @@ static void present(void) { SDL_RenderPresent(R); }
 static void draw_scene(void) {
     switch (scene) {
     case SC_TITLE: draw_title(); break;
+    case SC_LANG: draw_lang(); break;
     case SC_SETUP: draw_setup(); break;
     case SC_GAME: draw_game(); break;
     case SC_OVER: draw_over(); break;
@@ -1172,6 +1329,7 @@ static void run_until_human(int phase, int maxSteps) {
 
 static int autotest(const char *dir) {
     frame = 100;
+    scene = SC_LANG; shot(dir, "00_idioma");
     scene = SC_TITLE; shot(dir, "01_titulo");
     scene = SC_SETUP; setupSel = 1; cfgNp = 3; cfgSlot[0] = 0; cfgSlot[1] = 2; cfgSlot[2] = 3; shot(dir, "02_config");
     start_game();
@@ -1209,6 +1367,19 @@ static int autotest(const char *dir) {
     rulesPage = 6; shot(dir, "09_regras_edificios");
     rulesPage = 8; shot(dir, "09b_controles");
     scene = SC_CREDITS; shot(dir, "10_creditos");
+    /* ingles e espanhol */
+    for (int L = 1; L <= 2; L++) {
+        g_lang = L;
+        char nm[32];
+        scene = SC_TITLE; snprintf(nm, sizeof nm, "12_titulo_%s", L == 1 ? "en" : "es"); shot(dir, nm);
+        scene = SC_GAME; viewer = 0; curtain = 0; nopts = game_options(&G, opts);
+        snprintf(nm, sizeof nm, "13_jogo_%s", L == 1 ? "en" : "es"); shot(dir, nm);
+        zoomCard = 20; snprintf(nm, sizeof nm, "14_carta_%s", L == 1 ? "en" : "es"); shot(dir, nm); zoomCard = -1;
+        scene = SC_SETUP; snprintf(nm, sizeof nm, "15_config_%s", L == 1 ? "en" : "es"); shot(dir, nm);
+        scene = SC_RULES; rulesPage = 4; snprintf(nm, sizeof nm, "16_regras_%s", L == 1 ? "en" : "es"); shot(dir, nm);
+        scene = SC_OVER; snprintf(nm, sizeof nm, "17_fim_%s", L == 1 ? "en" : "es"); shot(dir, nm);
+    }
+    g_lang = 0;
     /* hot-seat: cortina */
     cfgNp = 2; cfgSlot[0] = 0; cfgSlot[1] = 0; start_game();
     nopts = game_options(&G, opts);
@@ -1268,6 +1439,7 @@ int main(int argc, char **argv) {
         poll_input();
         switch (scene) {
         case SC_TITLE: update_title(); break;
+        case SC_LANG: update_lang(); break;
         case SC_SETUP: update_setup(); break;
         case SC_GAME: update_game(); break;
         case SC_OVER: update_over(); break;

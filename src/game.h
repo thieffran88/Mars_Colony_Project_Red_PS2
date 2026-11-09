@@ -137,10 +137,16 @@ typedef struct {
 } Score;
 
 extern const CardDef CARDS[NCARDS];
-extern const char *COLOR_NAME[NCOLORS];
-extern const char *BLD_NAME[NCOLORS];
-extern const char *BLD_ABILITY[NCOLORS];
-extern const char *PLAYER_NAME[MAXP];
+
+/* idioma: 0 portugues (principal), 1 ingles, 2 espanhol */
+enum { LANG_PT = 0, LANG_EN, LANG_ES, LANG_COUNT };
+extern int g_lang;
+#define TR(pt, en, es) (g_lang == LANG_EN ? (en) : g_lang == LANG_ES ? (es) : (pt))
+const char *card_name(int c);
+const char *color_name(int b);
+const char *bld_name(int b);
+const char *bld_ability(int b);
+const char *player_name(int p);
 
 void game_init(Game *g, int np, const int human[MAXP], const int ailevel[MAXP],
                int draft, uint32_t seed);

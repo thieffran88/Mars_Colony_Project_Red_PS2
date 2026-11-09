@@ -4,10 +4,22 @@ Jogo de cartas e estratégia sobre a colonização de Marte, feito como **homebr
 As regras foram adaptadas do livro de regras enviado (Pocket Mars). Nomes, cartas, efeitos,
 arte e código deste jogo são originais.
 
+![Escolha de idioma](docs/idioma.png)
 ![Título](docs/titulo.png)
 ![Partida](docs/jogo.png)
 ![Carta em tamanho grande](docs/carta.png)
 ![Fim de jogo](docs/fim.png)
+
+## Download
+
+Baixe a versão mais recente na página de **[Releases](https://github.com/thieffran88/Mars_Colony_Project_Red_PS2/releases/latest)**
+(`MARSCOL.ELF` e `MarsColony_ProjectRed_PS2.iso`). Os mesmos arquivos também ficam em `dist/`.
+
+## Idiomas
+
+Ao ligar o jogo aparece a escolha de idioma: **Português** (principal), **English** e **Español**.
+Tudo é traduzido: menus, cartas (nomes e efeitos), edifícios, mensagens da partida, tutorial e créditos.
+Dá para trocar depois pela opção **Idioma** do menu principal.
 
 ## Como jogar no PS2 / emulador
 

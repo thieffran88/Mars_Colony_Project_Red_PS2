@@ -10,16 +10,63 @@
 #include <string.h>
 #include <stdarg.h>
 
-const char *COLOR_NAME[NCOLORS] = { "Ecossistema", "Energia", "Ciência", "Água", "Construção" };
-const char *BLD_NAME[NCOLORS]   = { "ECOSSISTEMA", "ENERGIA", "CIÊNCIA", "ÁGUA", "CONSTRUÇÃO" };
-const char *BLD_ABILITY[NCOLORS] = {
-    "Mova qualquer {C} de um edifício de {S} para {D} ou de {D} para {S}.",
-    "Ganhe 1 {E}.",
-    "Traga 1 {C} seu da Terra para a nave.",
-    "Coloque 1 carta sua (mão ou módulo) no fundo do baralho.",
-    "Mova 1 {C} da nave para o {S} de qualquer edifício."
+int g_lang = LANG_PT;
+
+static const char *COLOR_NAMES[LANG_COUNT][NCOLORS] = {
+    { "Ecossistema", "Energia", "Ciência", "Água", "Construção" },
+    { "Ecosystem", "Energy", "Science", "Water", "Construction" },
+    { "Ecosistema", "Energía", "Ciencia", "Agua", "Construcción" },
 };
-const char *PLAYER_NAME[MAXP] = { "Vermelho", "Azul", "Verde", "Amarelo" };
+static const char *BLD_NAMES[LANG_COUNT][NCOLORS] = {
+    { "ECOSSISTEMA", "ENERGIA", "CIÊNCIA", "ÁGUA", "CONSTRUÇÃO" },
+    { "ECOSYSTEM", "ENERGY", "SCIENCE", "WATER", "CONSTRUCTION" },
+    { "ECOSISTEMA", "ENERGÍA", "CIENCIA", "AGUA", "CONSTRUCCIÓN" },
+};
+static const char *BLD_ABILITIES[LANG_COUNT][NCOLORS] = {
+    { "Mova qualquer {C} de um edifício de {S} para {D} ou de {D} para {S}.",
+      "Ganhe 1 {E}.",
+      "Traga 1 {C} seu da Terra para a nave.",
+      "Coloque 1 carta sua (mão ou módulo) no fundo do baralho.",
+      "Mova 1 {C} da nave para o {S} de qualquer edifício." },
+    { "Move any {C} in a building from {S} to {D} or from {D} to {S}.",
+      "Gain 1 {E}.",
+      "Bring 1 of your {C} from Earth to your ship.",
+      "Put 1 of your cards (hand or module) at the bottom of the deck.",
+      "Move 1 {C} from your ship to the {S} of any building." },
+    { "Mueve cualquier {C} de un edificio de {S} a {D} o de {D} a {S}.",
+      "Gana 1 {E}.",
+      "Trae 1 {C} tuyo de la Tierra a la nave.",
+      "Pon 1 carta tuya (mano o módulo) al fondo del mazo.",
+      "Mueve 1 {C} de la nave al {S} de cualquier edificio." },
+};
+static const char *PLAYER_NAMES[LANG_COUNT][MAXP] = {
+    { "Vermelho", "Azul", "Verde", "Amarelo" },
+    { "Red", "Blue", "Green", "Yellow" },
+    { "Rojo", "Azul", "Verde", "Amarillo" },
+};
+static const char *CARD_NAMES_EN[NCARDS] = {
+    "Seed Bank", "Adapted Lichen", "Bioreactor", "Vertical Farm", "Hydroponic Greenhouse", "Algae Dome", "Sealed Forest",
+    "Solar Panel", "Thermal Generator", "Wind Turbine", "Sodium Battery", "Compact Reactor", "Power Grid", "Experimental Fusion",
+    "Deep Antenna", "Mobile Lab", "Orbital Probe", "Research Center", "Giant Telescope", "Medical Clinic", "Martian Academy",
+    "Ice Well", "Regolith Filter", "Condenser", "Recycler", "Aqueduct", "Electrolysis Plant", "Reservoir",
+    "Excavator", "3D Printer", "Crane", "Inflatable Module", "Lava Tube", "Landing Pad", "Cargo Elevator",
+};
+static const char *CARD_NAMES_ES[NCARDS] = {
+    "Banco de Semillas", "Liquen Adaptado", "Biorreactor", "Granja Vertical", "Invernadero Hidropónico", "Domo de Algas", "Bosque Sellado",
+    "Panel Solar", "Generador Térmico", "Turbina Eólica", "Batería de Sodio", "Reactor Compacto", "Red Eléctrica", "Fusión Experimental",
+    "Antena Profunda", "Laboratorio Móvil", "Sonda Orbital", "Centro de Investigación", "Telescopio Gigante", "Clínica Médica", "Academia Marciana",
+    "Pozo de Hielo", "Filtro de Regolito", "Condensador", "Reciclador", "Acueducto", "Planta de Electrólisis", "Embalse",
+    "Excavadora", "Impresora 3D", "Grúa", "Módulo Inflable", "Tubo de Lava", "Plataforma de Aterrizaje", "Elevador de Carga",
+};
+
+static int L(void) { return g_lang >= 0 && g_lang < LANG_COUNT ? g_lang : 0; }
+const char *color_name(int b) { return COLOR_NAMES[L()][b]; }
+const char *bld_name(int b) { return BLD_NAMES[L()][b]; }
+const char *bld_ability(int b) { return BLD_ABILITIES[L()][b]; }
+const char *player_name(int p) { return PLAYER_NAMES[L()][p]; }
+const char *card_name(int c) {
+    return L() == LANG_EN ? CARD_NAMES_EN[c] : L() == LANG_ES ? CARD_NAMES_ES[c] : CARDS[c].name;
+}
 
 #define F(t,a,b) { t, a, b }
 const CardDef CARDS[NCARDS] = {
@@ -115,7 +162,7 @@ int game_top_value(const Game *g, int b) {
     return CARDS[B->stack[B->nstack - 1]].value;
 }
 
-static const char *pname(const Game *g, int p) { (void)g; return PLAYER_NAME[p]; }
+static const char *pname(const Game *g, int p) { (void)g; return player_name(p); }
 
 static void remove_at(uint8_t *a, uint8_t *n, int idx) {
     for (int i = idx; i < *n - 1; i++) a[i] = a[i + 1];
@@ -143,7 +190,7 @@ static void refill_deck(Game *g) {
     g->ndiscard = 0;
     shuffle(g, g->deck, g->ndeck);
     g->chance = 1;
-    game_log(g, "O baralho acabou: novo baralho embaralhado (%d cartas).", g->ndeck);
+    game_log(g, TR("O baralho acabou: novo baralho embaralhado (%d cartas).", "The deck ran out: new deck shuffled (%d cards).", "Se acabó el mazo: nuevo mazo barajado (%d cartas)."), g->ndeck);
 }
 
 static int draw_card(Game *g, int p) {
@@ -197,7 +244,7 @@ void game_init(Game *g, int np, const int human[MAXP], const int ailevel[MAXP],
     g->useDraft = (int8_t)draft;
     g->lastBld = 255;
 
-    game_log(g, "Bem-vindos a Marte! %s começa a rodada.", pname(g, g->start));
+    game_log(g, TR("Bem-vindos a Marte! %s começa a rodada.", "Welcome to Mars! %s starts the round.", "¡Bienvenidos a Marte! %s empieza la ronda."), pname(g, g->start));
     if (draft) {
         for (int i = 0; i < np; i++) {
             g->npool[i] = 5;
@@ -313,44 +360,44 @@ static void fx_auto(Game *g, const Fx *fx, int actor) {
     switch (fx->type) {
     case FX_EARTH:
         k = take_earth(g, actor, fx->a);
-        if (k) game_log(g, "%s traz %d {C} da Terra.", pname(g, actor), k);
+        if (k) game_log(g, TR("%s traz %d {C} da Terra.", "%s brings %d {C} from Earth.", "%s trae %d {C} de la Tierra."), pname(g, actor), k);
         break;
     case FX_EARTH_IF_HAND:
         if (hand_has_color(g, actor, fx->a)) {
             k = take_earth(g, actor, 1);
-            if (k) game_log(g, "%s tem {%d} na mão e traz 1 {C}.", pname(g, actor), fx->a);
-        } else game_log(g, "%s não tem carta {%d} na mão.", pname(g, actor), fx->a);
+            if (k) game_log(g, TR("%s tem {%d} na mão e traz 1 {C}.", "%s has {%d} in hand and brings 1 {C}.", "%s tiene {%d} en la mano y trae 1 {C}."), pname(g, actor), fx->a);
+        } else game_log(g, TR("%s não tem carta {%d} na mão.", "%s has no {%d} card in hand.", "%s no tiene carta {%d} en la mano."), pname(g, actor), fx->a);
         break;
     case FX_EARTH_IF_ABSENT:
         if (g->b[fx->a].star1[actor] + g->b[fx->a].star2[actor] == 0) {
             k = take_earth(g, actor, fx->b);
-            if (k) game_log(g, "%s traz %d {C} da Terra.", pname(g, actor), k);
-        } else game_log(g, "%s já tem colono em {%d}: sem efeito.", pname(g, actor), fx->a);
+            if (k) game_log(g, TR("%s traz %d {C} da Terra.", "%s brings %d {C} from Earth.", "%s trae %d {C} de la Tierra."), pname(g, actor), k);
+        } else game_log(g, TR("%s já tem colono em {%d}: sem efeito.", "%s already has a colonist in {%d}: no effect.", "%s ya tiene colono en {%d}: sin efecto."), pname(g, actor), fx->a);
         break;
     case FX_ENERGY:
         gain_energy(g, actor, fx->a);
-        game_log(g, "%s ganha %d {E}.", pname(g, actor), fx->a);
+        game_log(g, TR("%s ganha %d {E}.", "%s gains %d {E}.", "%s gana %d {E}."), pname(g, actor), fx->a);
         break;
     case FX_EARTH_ENERGY:
         take_earth(g, actor, 1);
         gain_energy(g, actor, 1);
-        game_log(g, "%s traz 1 {C} e ganha 1 {E}.", pname(g, actor));
+        game_log(g, TR("%s traz 1 {C} e ganha 1 {E}.", "%s brings 1 {C} and gains 1 {E}.", "%s trae 1 {C} y gana 1 {E}."), pname(g, actor));
         break;
     case FX_DRAW:
         k = 0;
         for (int i = 0; i < fx->a; i++) k += draw_card(g, actor);
-        game_log(g, "%s compra %d carta(s).", pname(g, actor), k);
+        game_log(g, TR("%s compra %d carta(s).", "%s draws %d card(s).", "%s roba %d carta(s)."), pname(g, actor), k);
         break;
     case FX_ENERGY_IF_LOW:
-        if (P->energy <= 2) { gain_energy(g, actor, fx->a); game_log(g, "%s ganha %d {E}.", pname(g, actor), fx->a); }
-        else game_log(g, "%s tem energia demais: sem efeito.", pname(g, actor));
+        if (P->energy <= 2) { gain_energy(g, actor, fx->a); game_log(g, TR("%s ganha %d {E}.", "%s gains %d {E}.", "%s gana %d {E}."), pname(g, actor), fx->a); }
+        else game_log(g, TR("%s tem energia demais: sem efeito.", "%s has too much energy: no effect.", "%s tiene demasiada energía: sin efecto."), pname(g, actor));
         break;
     case FX_ENERGY_PER_BLD: {
         int c = 0;
         for (int b = 0; b < 4; b++) if (g->b[b].star1[actor] + g->b[b].star2[actor]) c++;
         if (c > 2) c = 2;
         gain_energy(g, actor, c);
-        game_log(g, "%s ganha %d {E}.", pname(g, actor), c);
+        game_log(g, TR("%s ganha %d {E}.", "%s gains %d {E}.", "%s gana %d {E}."), pname(g, actor), c);
         break; }
     default: break;
     }
@@ -373,7 +420,7 @@ static void begin_fx(Game *g, int card, int bottom, int actor) {
     }
     Option tmp[MAX_OPTS];
     if (fx_options(g, fx, actor, 0, tmp) == 0) {
-        game_log(g, "Efeito sem alvo possível para %s.", pname(g, actor));
+        game_log(g, TR("Efeito sem alvo possível para %s.", "No valid target for %s.", "Efecto sin objetivo posible para %s."), pname(g, actor));
         return;
     }
     g->phase = PH_FX;
@@ -391,11 +438,11 @@ static void end_turn(Game *g) {
         if (over || g->round >= 60) {
             g->phase = PH_OVER;
             g->decider = -1;
-            game_log(g, "Fim de jogo! Contando os pontos...");
+            game_log(g, TR("Fim de jogo! Contando os pontos...", "Game over! Counting points...", "¡Fin del juego! Contando puntos..."));
             return;
         }
         g->round++;
-        game_log(g, "--- Rodada %d ---", g->round);
+        game_log(g, TR("--- Rodada %d ---", "--- Round %d ---", "--- Ronda %d ---"), g->round);
     }
     g->phase = PH_ACTION;
     g->decider = g->cur;
@@ -443,7 +490,7 @@ static void advance(Game *g) {
             if (v > under && g->p[g->cur].ship > 0) {
                 g->phase = PH_CONNECT_MOVE; g->decider = g->cur; return;
             } else if (v <= under) {
-                game_log(g, "Valor %d não supera %d: sem pouso de colono.", v, under);
+                game_log(g, TR("Valor %d não supera %d: sem pouso de colono.", "Value %d does not beat %d: no landing.", "Valor %d no supera %d: sin aterrizaje."), v, under);
             }
             break; }
         case 2: /* acao inferior (do dono) */
@@ -456,9 +503,9 @@ static void advance(Game *g) {
             int b = g->ctxBld, p = g->cur;
             g->ctxStep = 0;
             if (b == C_ENERGY) {
-                if (g->p[p].energy < MAX_ENERGY) { gain_energy(g, p, 1); game_log(g, "Edifício {1}: %s ganha 1 {E}.", pname(g, p)); }
+                if (g->p[p].energy < MAX_ENERGY) { gain_energy(g, p, 1); game_log(g, TR("Edifício {1}: %s ganha 1 {E}.", "Building {1}: %s gains 1 {E}.", "Edificio {1}: %s gana 1 {E}."), pname(g, p)); }
             } else if (b == C_SCIENCE) {
-                if (take_earth(g, p, 1)) game_log(g, "Edifício {2}: %s traz 1 {C} da Terra.", pname(g, p));
+                if (take_earth(g, p, 1)) game_log(g, TR("Edifício {2}: %s traz 1 {C} da Terra.", "Building {2}: %s brings 1 {C} from Earth.", "Edificio {2}: %s trae 1 {C} de la Tierra."), pname(g, p));
             } else {
                 Option tmp[MAX_OPTS];
                 int n = 0;
@@ -564,61 +611,61 @@ static void apply_fx_choice(Game *g, const Option *o) {
     int done = 1;
     if (o->kind == OPT_SKIP) {
         if (!(fx->type == FX_PROMOTE_TUCK && g->ctxStep == 1))
-            game_log(g, "%s não usa o efeito.", pname(g, a));
+            game_log(g, TR("%s não usa o efeito.", "%s skips the effect.", "%s no usa el efecto."), pname(g, a));
     } else switch (fx->type) {
     case FX_SHIP_TO:
         do_ship_to(g, a, o->a);
-        game_log(g, "%s pousa 1 {C} em {%d} ({S}).", pname(g, a), o->a);
+        game_log(g, TR("%s pousa 1 {C} em {%d} ({S}).", "%s lands 1 {C} on {%d} ({S}).", "%s aterriza 1 {C} en {%d} ({S})."), pname(g, a), o->a);
         break;
     case FX_PAY_SHIP_TO:
         P->energy -= (uint8_t)fx->a;
         do_ship_to(g, a, o->a);
-        game_log(g, "%s paga %d {E} e pousa 1 {C} em {%d}.", pname(g, a), fx->a, o->a);
+        game_log(g, TR("%s paga %d {E} e pousa 1 {C} em {%d}.", "%s pays %d {E} and lands 1 {C} on {%d}.", "%s paga %d {E} y aterriza 1 {C} en {%d}."), pname(g, a), fx->a, o->a);
         break;
     case FX_PROMOTE:
         do_promote(g, a, o->a);
-        game_log(g, "%s promove 1 {C} para {D} em {%d}.", pname(g, a), o->a);
+        game_log(g, TR("%s promove 1 {C} para {D} em {%d}.", "%s promotes 1 {C} to {D} in {%d}.", "%s asciende 1 {C} a {D} en {%d}."), pname(g, a), o->a);
         break;
     case FX_PROMOTE_TUCK:
         if (g->ctxStep == 0) {
             do_promote(g, a, o->a);
-            game_log(g, "%s promove 1 {C} para {D} em {%d}.", pname(g, a), o->a);
+            game_log(g, TR("%s promove 1 {C} para {D} em {%d}.", "%s promotes 1 {C} to {D} in {%d}.", "%s asciende 1 {C} a {D} en {%d}."), pname(g, a), o->a);
             if (P->nhand > 0) { g->ctxStep = 1; done = 0; }
         } else {
             int c = P->hand[o->b];
             remove_at(P->hand, &P->nhand, o->b);
             tuck_card(g, c);
-            game_log(g, "%s põe 1 carta no fundo do baralho.", pname(g, a));
+            game_log(g, TR("%s põe 1 carta no fundo do baralho.", "%s puts 1 card at the bottom of the deck.", "%s pone 1 carta al fondo del mazo."), pname(g, a));
         }
         break;
     case FX_SWITCH:
         g->b[o->a].star1[o->b]--; g->b[o->a].star2[o->b]++;
         g->b[o->a].star2[o->c]--; g->b[o->a].star1[o->c]++;
         g->lastBld = (uint8_t)o->a;
-        game_log(g, "Troca em {%d}: %s sobe para {D}, %s desce para {S}.", o->a, pname(g, o->b), pname(g, o->c));
+        game_log(g, TR("Troca em {%d}: %s sobe para {D}, %s desce para {S}.", "Swap in {%d}: %s goes up to {D}, %s goes down to {S}.", "Cambio en {%d}: %s sube a {D}, %s baja a {S}."), o->a, pname(g, o->b), pname(g, o->c));
         break;
     case FX_PAY_PROMOTE:
         P->energy -= (uint8_t)fx->a;
         do_promote(g, a, o->a);
-        game_log(g, "%s paga %d {E} e promove 1 {C} em {%d}.", pname(g, a), fx->a, o->a);
+        game_log(g, TR("%s paga %d {E} e promove 1 {C} em {%d}.", "%s pays %d {E} and promotes 1 {C} in {%d}.", "%s paga %d {E} y asciende 1 {C} en {%d}."), pname(g, a), fx->a, o->a);
         break;
     case FX_DEMOTE:
         P->energy -= (uint8_t)fx->a;
         g->b[o->a].star2[o->b]--; g->b[o->a].star1[o->b]++;
         g->lastBld = (uint8_t)o->a;
-        game_log(g, "%s rebaixa um {C} de %s em {%d}.", pname(g, a), pname(g, o->b), o->a);
+        game_log(g, TR("%s rebaixa um {C} de %s em {%d}.", "%s demotes a {C} of %s in {%d}.", "%s baja un {C} de %s en {%d}."), pname(g, a), pname(g, o->b), o->a);
         break;
     case FX_PAY_EARTH: {
         P->energy -= (uint8_t)fx->a;
         int k = take_earth(g, a, fx->b);
-        game_log(g, "%s paga %d {E} e traz %d {C}.", pname(g, a), fx->a, k);
+        game_log(g, TR("%s paga %d {E} e traz %d {C}.", "%s pays %d {E} and brings %d {C}.", "%s paga %d {E} y trae %d {C}."), pname(g, a), fx->a, k);
         break; }
     case FX_TUCK_DRAW: {
         int c = P->hand[o->b];
         remove_at(P->hand, &P->nhand, o->b);
         tuck_card(g, c);
         int k = draw_card(g, a); k += draw_card(g, a);
-        game_log(g, "%s recicla 1 carta e compra %d.", pname(g, a), k);
+        game_log(g, TR("%s recicla 1 carta e compra %d.", "%s recycles 1 card and draws %d.", "%s recicla 1 carta y roba %d."), pname(g, a), k);
         break; }
     }
     if (!done) return; /* continua em PH_FX */
@@ -635,17 +682,17 @@ static void apply_ability(Game *g, const Option *o) {
         if (o->c == 0) { B->star1[o->b]--; B->star2[o->b]++; }
         else           { B->star2[o->b]--; B->star1[o->b]++; }
         g->lastBld = (uint8_t)o->a;
-        game_log(g, "Edifício {0}: %s move {C} de %s para %s em {%d}.", pname(g, p), pname(g, o->b),
+        game_log(g, TR("Edifício {0}: %s move {C} de %s para %s em {%d}.", "Building {0}: %s moves %s's {C} to %s in {%d}.", "Edificio {0}: %s mueve {C} de %s a %s en {%d}."), pname(g, p), pname(g, o->b),
                  o->c == 0 ? "{D}" : "{S}", o->a);
     } else if (b == C_WATER) {
         int c;
         if (o->a == 0) { c = P->hand[o->b]; remove_at(P->hand, &P->nhand, o->b); }
         else           { c = P->prep[o->b]; remove_at(P->prep, &P->nprep, o->b); }
         tuck_card(g, c);
-        game_log(g, "Edifício {3}: %s põe 1 carta no fundo do baralho.", pname(g, p));
+        game_log(g, TR("Edifício {3}: %s põe 1 carta no fundo do baralho.", "Building {3}: %s puts 1 card at the bottom of the deck.", "Edificio {3}: %s pone 1 carta al fondo del mazo."), pname(g, p));
     } else if (b == C_CONSTR) {
         do_ship_to(g, p, o->a);
-        game_log(g, "Edifício {4}: %s pousa 1 {C} em {%d}.", pname(g, p), o->a);
+        game_log(g, TR("Edifício {4}: %s pousa 1 {C} em {%d}.", "Building {4}: %s lands 1 {C} on {%d}.", "Edificio {4}: %s aterriza 1 {C} en {%d}."), pname(g, p), o->a);
     }
 }
 
@@ -666,7 +713,7 @@ void game_apply(Game *g, const Option *o) {
             for (int i = 0; i < g->np; i++) g->npool[i] = 0;
             shuffle(g, g->deck, g->ndeck);
             g->phase = PH_SETUP_PREP; g->setupIdx = 0; g->decider = 0;
-            game_log(g, "Draft concluído. Escolham as cartas do módulo.");
+            game_log(g, TR("Draft concluído. Escolham as cartas do módulo.", "Draft complete. Choose your module cards.", "Draft terminado. Elegid las cartas del módulo."));
             return;
         }
         uint8_t tmp[MAXP][5]; uint8_t tn[MAXP];
@@ -685,7 +732,7 @@ void game_apply(Game *g, const Option *o) {
         if (P->nprep < 2) return;
         if (p + 1 < g->np) { g->decider = p + 1; return; }
         g->phase = PH_ACTION; g->cur = g->start; g->decider = g->cur; g->ctxFlow = 0;
-        game_log(g, "--- Rodada 1 ---");
+        game_log(g, TR("--- Rodada 1 ---", "--- Round 1 ---", "--- Ronda 1 ---"));
         return; }
     case PH_ACTION: {
         int p = g->cur;
@@ -697,7 +744,7 @@ void game_apply(Game *g, const Option *o) {
             int c = P->hand[o->a];
             remove_at(P->hand, &P->nhand, o->a);
             g->discard[g->ndiscard++] = (uint8_t)c;
-            game_log(g, "%s joga {H} \"%s\".", pname(g, p), CARDS[c].name);
+            game_log(g, TR("%s joga {H} \"%s\".", "%s plays {H} \"%s\".", "%s juega {H} \"%s\"."), pname(g, p), card_name(c));
             g->ctxFlow = 4;
             begin_fx(g, c, 0, p);
             if (g->phase == PH_FX) return;
@@ -706,7 +753,7 @@ void game_apply(Game *g, const Option *o) {
             int c = P->prep[o->a];
             remove_at(P->prep, &P->nprep, o->a);
             connect_card(g, c);
-            game_log(g, "%s conecta {M} \"%s\" (%d) em {%d}.", pname(g, p), CARDS[c].name, CARDS[c].value, CARDS[c].color);
+            game_log(g, TR("%s conecta {M} \"%s\" (%d) em {%d}.", "%s connects {M} \"%s\" (%d) to {%d}.", "%s conecta {M} \"%s\" (%d) en {%d}."), pname(g, p), card_name(c), CARDS[c].value, CARDS[c].color);
             g->ctxFlow = 1;
             break; }
         case OPT_PLAY_OPP: {
@@ -716,13 +763,13 @@ void game_apply(Game *g, const Option *o) {
             connect_card(g, c);
             g->ctxFromOpp = 1;
             g->ctxOwner = (int8_t)q;
-            game_log(g, "%s revela o módulo de %s: \"%s\" (%d) em {%d}.", pname(g, p), pname(g, q),
-                     CARDS[c].name, CARDS[c].value, CARDS[c].color);
+            game_log(g, TR("%s revela o módulo de %s: \"%s\" (%d) em {%d}.", "%s reveals %s's module: \"%s\" (%d) to {%d}.", "%s revela el módulo de %s: \"%s\" (%d) en {%d}."), pname(g, p), pname(g, q),
+                     card_name(c), CARDS[c].value, CARDS[c].color);
             g->ctxFlow = 1;
             break; }
         case OPT_TAKE_EARTH:
             take_earth(g, p, 1);
-            game_log(g, "%s traz 1 {C} da Terra para a nave.", pname(g, p));
+            game_log(g, TR("%s traz 1 {C} da Terra para a nave.", "%s brings 1 {C} from Earth to the ship.", "%s trae 1 {C} de la Tierra a la nave."), pname(g, p));
             g->ctxFlow = 4;
             break;
         case OPT_DISCARD_ENERGY: {
@@ -731,11 +778,11 @@ void game_apply(Game *g, const Option *o) {
             else           { c = P->prep[o->b]; remove_at(P->prep, &P->nprep, o->b); }
             g->discard[g->ndiscard++] = (uint8_t)c;
             gain_energy(g, p, 1);
-            game_log(g, "%s descarta 1 carta e ganha 1 {E}.", pname(g, p));
+            game_log(g, TR("%s descarta 1 carta e ganha 1 {E}.", "%s discards 1 card and gains 1 {E}.", "%s descarta 1 carta y gana 1 {E}."), pname(g, p));
             g->ctxFlow = 4;
             break; }
         default:
-            game_log(g, "%s passa a vez.", pname(g, p));
+            game_log(g, TR("%s passa a vez.", "%s passes.", "%s pasa el turno."), pname(g, p));
             g->ctxFlow = 4;
             break;
         }
@@ -750,7 +797,7 @@ void game_apply(Game *g, const Option *o) {
     case PH_CONNECT_MOVE:
         if (o->kind == OPT_MOVE_YES) {
             do_ship_to(g, g->cur, g->ctxBld);
-            game_log(g, "%s pousa 1 {C} em {%d} ({S}).", pname(g, g->cur), g->ctxBld);
+            game_log(g, TR("%s pousa 1 {C} em {%d} ({S}).", "%s lands 1 {C} on {%d} ({S}).", "%s aterriza 1 {C} en {%d} ({S})."), pname(g, g->cur), g->ctxBld);
         }
         g->phase = PH_ACTION;
         advance(g);
@@ -816,35 +863,35 @@ void game_fx_text(const Fx *fx, char *buf, int n) {
     char bl[8] = "";
     if (fx->a >= 0) snprintf(bl, sizeof(bl), "{%d}", fx->a);
     switch (fx->type) {
-    case FX_EARTH: snprintf(buf, n, "Traga %d {C} da Terra.", fx->a); break;
-    case FX_EARTH_IF_HAND: snprintf(buf, n, "Traga 1 {C} da Terra se tiver carta {%d} na {H}.", fx->a); break;
-    case FX_EARTH_IF_ABSENT: snprintf(buf, n, "Traga %d {C} da Terra se não tiver {C} em {%d}.", fx->b, fx->a); break;
-    case FX_ENERGY: snprintf(buf, n, "Ganhe %d {E}.", fx->a); break;
-    case FX_EARTH_ENERGY: snprintf(buf, n, "Traga 1 {C} da Terra e ganhe 1 {E}."); break;
-    case FX_DRAW: snprintf(buf, n, "Compre %d carta%s.", fx->a, fx->a > 1 ? "s" : ""); break;
-    case FX_ENERGY_IF_LOW: snprintf(buf, n, "Se tiver 2 {E} ou menos, ganhe %d {E}.", fx->a); break;
-    case FX_ENERGY_PER_BLD: snprintf(buf, n, "Ganhe 1 {E} por edifício com {C} seu (máx. 2)."); break;
+    case FX_EARTH: snprintf(buf, n, TR("Traga %d {C} da Terra.", "Bring %d {C} from Earth.", "Trae %d {C} de la Tierra."), fx->a); break;
+    case FX_EARTH_IF_HAND: snprintf(buf, n, TR("Traga 1 {C} da Terra se tiver carta {%d} na {H}.", "Bring 1 {C} from Earth if you have a {%d} card in {H}.", "Trae 1 {C} de la Tierra si tienes carta {%d} en la {H}."), fx->a); break;
+    case FX_EARTH_IF_ABSENT: snprintf(buf, n, TR("Traga %d {C} da Terra se não tiver {C} em {%d}.", "Bring %d {C} from Earth if you have no {C} in {%d}.", "Trae %d {C} de la Tierra si no tienes {C} en {%d}."), fx->b, fx->a); break;
+    case FX_ENERGY: snprintf(buf, n, TR("Ganhe %d {E}.", "Gain %d {E}.", "Gana %d {E}."), fx->a); break;
+    case FX_EARTH_ENERGY: snprintf(buf, n, TR("Traga 1 {C} da Terra e ganhe 1 {E}.", "Bring 1 {C} from Earth and gain 1 {E}.", "Trae 1 {C} de la Tierra y gana 1 {E}.")); break;
+    case FX_DRAW: snprintf(buf, n, TR("Compre %d carta%s.", "Draw %d card%s.", "Roba %d carta%s."), fx->a, fx->a > 1 ? "s" : ""); break;
+    case FX_ENERGY_IF_LOW: snprintf(buf, n, TR("Se tiver 2 {E} ou menos, ganhe %d {E}.", "If you have 2 {E} or less, gain %d {E}.", "Si tienes 2 {E} o menos, gana %d {E}."), fx->a); break;
+    case FX_ENERGY_PER_BLD: snprintf(buf, n, TR("Ganhe 1 {E} por edifício com {C} seu (máx. 2).", "Gain 1 {E} per building with your {C} (max. 2).", "Gana 1 {E} por edificio con {C} tuyo (máx. 2).")); break;
     case FX_SHIP_TO:
-        if (fx->a < 0) snprintf(buf, n, "Mova 1 {C} da nave para o {S} de qualquer edifício.");
-        else snprintf(buf, n, "Mova 1 {C} da nave para o {S} de %s.", bl);
+        if (fx->a < 0) snprintf(buf, n, TR("Mova 1 {C} da nave para o {S} de qualquer edifício.", "Move 1 {C} from your ship to the {S} of any building.", "Mueve 1 {C} de la nave al {S} de cualquier edificio."));
+        else snprintf(buf, n, TR("Mova 1 {C} da nave para o {S} de %s.", "Move 1 {C} from your ship to the {S} of %s.", "Mueve 1 {C} de la nave al {S} de %s."), bl);
         break;
-    case FX_PAY_SHIP_TO: snprintf(buf, n, "Pague %d {E}: mova 1 {C} da nave para o {S} de qualquer edifício.", fx->a); break;
+    case FX_PAY_SHIP_TO: snprintf(buf, n, TR("Pague %d {E}: mova 1 {C} da nave para o {S} de qualquer edifício.", "Pay %d {E}: move 1 {C} from your ship to the {S} of any building.", "Paga %d {E}: mueve 1 {C} de la nave al {S} de cualquier edificio."), fx->a); break;
     case FX_PROMOTE:
-        if (fx->a < 0) snprintf(buf, n, "Mova 1 {C} seu de {S} para {D} em qualquer edifício.");
-        else snprintf(buf, n, "Mova 1 {C} seu de {S} para {D} em %s.", bl);
+        if (fx->a < 0) snprintf(buf, n, TR("Mova 1 {C} seu de {S} para {D} em qualquer edifício.", "Move 1 of your {C} from {S} to {D} in any building.", "Mueve 1 {C} tuyo de {S} a {D} en cualquier edificio."));
+        else snprintf(buf, n, TR("Mova 1 {C} seu de {S} para {D} em %s.", "Move 1 of your {C} from {S} to {D} in %s.", "Mueve 1 {C} tuyo de {S} a {D} en %s."), bl);
         break;
     case FX_PROMOTE_TUCK:
-        if (fx->a < 0) snprintf(buf, n, "Mova 1 {C} seu de {S} para {D}. Pode pôr 1 carta da {H} no fundo do baralho.");
-        else snprintf(buf, n, "Mova 1 {C} seu de {S} para {D} em %s. Pode pôr 1 carta da {H} no fundo do baralho.", bl);
+        if (fx->a < 0) snprintf(buf, n, TR("Mova 1 {C} seu de {S} para {D}. Pode pôr 1 carta da {H} no fundo do baralho.", "Move 1 of your {C} from {S} to {D}. You may put 1 card from {H} at the bottom of the deck.", "Mueve 1 {C} tuyo de {S} a {D}. Puedes poner 1 carta de la {H} al fondo del mazo."));
+        else snprintf(buf, n, TR("Mova 1 {C} seu de {S} para {D} em %s. Pode pôr 1 carta da {H} no fundo do baralho.", "Move 1 of your {C} from {S} to {D} in %s. You may put 1 card from {H} at the bottom of the deck.", "Mueve 1 {C} tuyo de {S} a {D} en %s. Puedes poner 1 carta de la {H} al fondo del mazo."), bl);
         break;
-    case FX_SWITCH: snprintf(buf, n, "Troque 2 {C} (de jogadores diferentes) entre {S} e {D} num edifício."); break;
-    case FX_PAY_PROMOTE: snprintf(buf, n, "Pague %d {E}: mova 1 {C} seu de {S} para {D}.", fx->a); break;
+    case FX_SWITCH: snprintf(buf, n, TR("Troque 2 {C} (de jogadores diferentes) entre {S} e {D} num edifício.", "Swap 2 {C} (of different players) between {S} and {D} in a building.", "Intercambia 2 {C} (de jugadores distintos) entre {S} y {D} en un edificio.")); break;
+    case FX_PAY_PROMOTE: snprintf(buf, n, TR("Pague %d {E}: mova 1 {C} seu de {S} para {D}.", "Pay %d {E}: move 1 of your {C} from {S} to {D}.", "Paga %d {E}: mueve 1 {C} tuyo de {S} a {D}."), fx->a); break;
     case FX_DEMOTE:
-        if (fx->a > 0) snprintf(buf, n, "Pague %d {E}: mova 1 {C} adversário de {D} para {S}.", fx->a);
-        else snprintf(buf, n, "Mova 1 {C} adversário de {D} para {S}.");
+        if (fx->a > 0) snprintf(buf, n, TR("Pague %d {E}: mova 1 {C} adversário de {D} para {S}.", "Pay %d {E}: move 1 opponent {C} from {D} to {S}.", "Paga %d {E}: mueve 1 {C} rival de {D} a {S}."), fx->a);
+        else snprintf(buf, n, TR("Mova 1 {C} adversário de {D} para {S}.", "Move 1 opponent {C} from {D} to {S}.", "Mueve 1 {C} rival de {D} a {S}."));
         break;
-    case FX_PAY_EARTH: snprintf(buf, n, "Pague %d {E}: traga %d {C} da Terra.", fx->a, fx->b); break;
-    case FX_TUCK_DRAW: snprintf(buf, n, "Ponha 1 carta da {H} no fundo do baralho e compre 2."); break;
+    case FX_PAY_EARTH: snprintf(buf, n, TR("Pague %d {E}: traga %d {C} da Terra.", "Pay %d {E}: bring %d {C} from Earth.", "Paga %d {E}: trae %d {C} de la Tierra."), fx->a, fx->b); break;
+    case FX_TUCK_DRAW: snprintf(buf, n, TR("Ponha 1 carta da {H} no fundo do baralho e compre 2.", "Put 1 card from {H} at the bottom of the deck and draw 2.", "Pon 1 carta de la {H} al fondo del mazo y roba 2.")); break;
     default: snprintf(buf, n, "-"); break;
     }
 }
@@ -853,34 +900,34 @@ void game_option_label(const Game *g, const Option *o, char *buf, int n) {
     const Player *P = (g->decider >= 0) ? &g->p[g->decider] : &g->p[g->cur];
     switch (o->kind) {
     case OPT_SKIP:
-        if (g->phase == PH_CONNECT_MOVE) snprintf(buf, n, "Não mover colono");
-        else if (g->phase == PH_FX && g->ctxStep == 1) snprintf(buf, n, "Manter as cartas");
-        else snprintf(buf, n, "Pular");
+        if (g->phase == PH_CONNECT_MOVE) snprintf(buf, n, TR("Não mover colono", "Don't land a colonist", "No aterrizar colono"));
+        else if (g->phase == PH_FX && g->ctxStep == 1) snprintf(buf, n, TR("Manter as cartas", "Keep the cards", "Conservar las cartas"));
+        else snprintf(buf, n, TR("Pular", "Skip", "Saltar"));
         break;
-    case OPT_PLAY_HAND: snprintf(buf, n, "{H} Jogar \"%s\"", CARDS[P->hand[o->a]].name); break;
+    case OPT_PLAY_HAND: snprintf(buf, n, TR("{H} Jogar \"%s\"", "{H} Play \"%s\"", "{H} Jugar \"%s\""), card_name(P->hand[o->a])); break;
     case OPT_PLAY_PREP: { int c = P->prep[o->a];
-        snprintf(buf, n, "{M} Conectar \"%s\" (%d) em {%d}", CARDS[c].name, CARDS[c].value, CARDS[c].color); break; }
+        snprintf(buf, n, TR("{M} Conectar \"%s\" (%d) em {%d}", "{M} Connect \"%s\" (%d) to {%d}", "{M} Conectar \"%s\" (%d) en {%d}"), card_name(c), CARDS[c].value, CARDS[c].color); break; }
     case OPT_PLAY_OPP: { int c = g->p[o->a].prep[o->b];
-        snprintf(buf, n, "{M} Módulo de %s: carta {%d} #%d", PLAYER_NAME[o->a], CARDS[c].color, o->b + 1); break; }
-    case OPT_TAKE_EARTH: snprintf(buf, n, "{C} Trazer 1 colono da Terra"); break;
+        snprintf(buf, n, TR("{M} Módulo de %s: carta {%d} #%d", "{M} %s's module: {%d} card #%d", "{M} Módulo de %s: carta {%d} #%d"), player_name(o->a), CARDS[c].color, o->b + 1); break; }
+    case OPT_TAKE_EARTH: snprintf(buf, n, TR("{C} Trazer 1 colono da Terra", "{C} Bring 1 colonist from Earth", "{C} Traer 1 colono de la Tierra")); break;
     case OPT_DISCARD_ENERGY: { int c = o->a == 0 ? P->hand[o->b] : P->prep[o->b];
-        snprintf(buf, n, "{E} Descartar \"%s\" (%s) +1 energia", CARDS[c].name, o->a == 0 ? "mão" : "módulo"); break; }
-    case OPT_MOVE_YES: snprintf(buf, n, "Pousar 1 {C} da nave em {%d} ({S})", o->a); break;
-    case OPT_SHIP_TO: snprintf(buf, n, "Pousar {C} em {%d} %s", o->a, COLOR_NAME[o->a]); break;
-    case OPT_PROMOTE: snprintf(buf, n, "Promover {C} em {%d} %s ({S}>{D})", o->a, COLOR_NAME[o->a]); break;
-    case OPT_ECO_MOVE: snprintf(buf, n, "{%d} %s: {C} %s %s", o->a, COLOR_NAME[o->a], PLAYER_NAME[o->b],
+        snprintf(buf, n, TR("{E} Descartar \"%s\" (%s) +1 energia", "{E} Discard \"%s\" (%s) +1 energy", "{E} Descartar \"%s\" (%s) +1 energía"), card_name(c), o->a == 0 ? TR("mão", "hand", "mano") : TR("módulo", "module", "módulo")); break; }
+    case OPT_MOVE_YES: snprintf(buf, n, TR("Pousar 1 {C} da nave em {%d} ({S})", "Land 1 {C} from your ship on {%d} ({S})", "Aterrizar 1 {C} de la nave en {%d} ({S})"), o->a); break;
+    case OPT_SHIP_TO: snprintf(buf, n, TR("Pousar {C} em {%d} %s", "Land {C} on {%d} %s", "Aterrizar {C} en {%d} %s"), o->a, color_name(o->a)); break;
+    case OPT_PROMOTE: snprintf(buf, n, TR("Promover {C} em {%d} %s ({S}>{D})", "Promote {C} in {%d} %s ({S}>{D})", "Ascender {C} en {%d} %s ({S}>{D})"), o->a, color_name(o->a)); break;
+    case OPT_ECO_MOVE: snprintf(buf, n, TR("{%d} %s: {C} %s %s", "{%d} %s: %s's {C} %s", "{%d} %s: {C} de %s %s"), o->a, color_name(o->a), player_name(o->b),
                                 o->c == 0 ? "{S}>{D}" : "{D}>{S}"); break;
-    case OPT_SWITCH: snprintf(buf, n, "{%d} %s sobe, %s desce", o->a, PLAYER_NAME[o->b], PLAYER_NAME[o->c]); break;
-    case OPT_DEMOTE: snprintf(buf, n, "{%d} Rebaixar {C} de %s", o->a, PLAYER_NAME[o->b]); break;
+    case OPT_SWITCH: snprintf(buf, n, TR("{%d} %s sobe, %s desce", "{%d} %s up, %s down", "{%d} %s sube, %s baja"), o->a, player_name(o->b), player_name(o->c)); break;
+    case OPT_DEMOTE: snprintf(buf, n, TR("{%d} Rebaixar {C} de %s", "{%d} Demote %s's {C}", "{%d} Bajar {C} de %s"), o->a, player_name(o->b)); break;
     case OPT_TUCK: { int c = o->a == 0 ? P->hand[o->b] : P->prep[o->b];
-        snprintf(buf, n, "Fundo do baralho: \"%s\" (%s)", CARDS[c].name, o->a == 0 ? "mão" : "módulo"); break; }
+        snprintf(buf, n, TR("Fundo do baralho: \"%s\" (%s)", "Deck bottom: \"%s\" (%s)", "Fondo del mazo: \"%s\" (%s)"), card_name(c), o->a == 0 ? TR("mão", "hand", "mano") : TR("módulo", "module", "módulo")); break; }
     case OPT_CARD: { int c = P->hand[o->a];
         int discard = (g->phase == PH_CLEANUP && P->nhand + P->nprep > 4);
-        snprintf(buf, n, "%s \"%s\" {%d} %d", discard ? "Descartar" : "Ao módulo:", CARDS[c].name, CARDS[c].color, CARDS[c].value); break; }
+        snprintf(buf, n, "%s \"%s\" {%d} %d", discard ? TR("Descartar", "Discard", "Descartar") : TR("Ao módulo:", "To module:", "Al módulo:"), card_name(c), CARDS[c].color, CARDS[c].value); break; }
     case OPT_DRAFT: { int c = g->pool[g->decider][o->a];
-        snprintf(buf, n, "Ficar com \"%s\" {%d} %d", CARDS[c].name, CARDS[c].color, CARDS[c].value); break; }
-    case OPT_TAKE_EARTH_FX: snprintf(buf, n, "Pagar e trazer colonos"); break;
-    case OPT_PASS: snprintf(buf, n, "Passar a vez"); break;
+        snprintf(buf, n, TR("Ficar com \"%s\" {%d} %d", "Keep \"%s\" {%d} %d", "Quedarse \"%s\" {%d} %d"), card_name(c), CARDS[c].color, CARDS[c].value); break; }
+    case OPT_TAKE_EARTH_FX: snprintf(buf, n, TR("Pagar e trazer colonos", "Pay and bring colonists", "Pagar y traer colonos")); break;
+    case OPT_PASS: snprintf(buf, n, TR("Passar a vez", "Pass", "Pasar el turno")); break;
     default: snprintf(buf, n, "?"); break;
     }
 }
