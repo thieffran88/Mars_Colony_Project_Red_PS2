@@ -64,6 +64,27 @@ livro não traz o texto das 35 cartas de projeto. Por isso:
 - As **35 cartas de projeto** (5 cores × 7, valores 0–7) foram criadas para este jogo em `src/game.c`
   (tabela `CARDS`), usando os tipos de efeito que o livro mostra nos exemplos. Dá para rebalancear editando essa tabela.
 
+## Música e efeitos sonoros
+
+Todo o áudio é **sintetizado em tempo real** por `src/synth.c` (não há arquivos de som): osciladores
+por tabela, envelopes, filtro passa-baixa, FM para sons de sino e um eco estéreo "ping-pong" que dá a
+sensação de espaço. Roda a 22 kHz para poupar a CPU do PS2.
+
+| Trilha | Onde toca | Estilo |
+|---|---|---|
+| **Horizonte Vermelho** | título, configuração, regras, créditos | synthwave heroico em Dó menor, 104 BPM, com melodia a partir do 9º compasso |
+| **Colônia à Deriva** | partida | ambiente calmo em Lá menor, 76 BPM: pads, arpejo com eco, "estrelas" de sino, vento solar |
+| **Fanfarra de vitória** | fim de jogo | arpejo + metais em Dó maior; depois emenda no tema do título |
+
+Efeitos: bip de rádio (cursor), confirmação/volta de computador, sopro de carta, **retrofoguete** quando um
+colono pousa, **decolagem** quando sai da Terra, **zap de laser** ao ganhar energia, **arpejo de estrelas**
+ao subir para ★★, **ping de sonar** quando começa a sua vez, brilho cristalino ao revelar uma carta,
+bips de dados ao comprar cartas e zumbido de erro. Os sons das habilidades automáticas dos edifícios
+também tocam.
+
+Volumes de música e efeitos (0–10) ficam na tela de configuração e no menu de pausa.
+`make test` também roda `audio_render`, que gera as trilhas e efeitos em WAV e confere níveis e clipping.
+
 ## Arte
 
 A arte enviada fica em `art_src/` (folhas das 35 cartas, key art, mascotes e prédios, fonte
@@ -115,7 +136,9 @@ make test       # simula milhares de partidas CPU x CPU verificando as regras
 src/game.c/.h    motor de regras (C puro, estado copiável, sem dependências)
 src/ai.c/.h      IA da CPU (busca das jogadas do turno + heurística de pontuação)
 src/render.c/.h  desenho com SDL2: atlas, texto UTF-8 com ícones embutidos
-src/audio.c/.h   sintetizador de efeitos e trilha ambiente
+src/synth.c/.h   sintetizador: trilhas, efeitos e eco (C puro)
+src/audio.c/.h   ponte SDL2 -> sintetizador
+tests/audio_render.c  gera WAVs das trilhas/efeitos e mede níveis
 src/main.c       telas: título, configuração, jogo, pausa, regras, fim, créditos
 src/assets.h     fonte/ícones gerados por tools/gen_assets.py
 src/art.h        posições da arte gerada por tools/gen_art.py
@@ -129,5 +152,6 @@ ps2/SYSTEM.CNF   boot do disco
 
 - Mecânicas: adaptadas das regras de *Pocket Mars* (design de Michał Jagodziński, Board&Dice). Projeto de fã, sem fins comerciais.
 - Arte das cartas, personagens, key art, fonte cromada e botões: fornecidos pelo autor do projeto.
-- Fonte de texto DejaVu Sans (licença livre). Música e efeitos sintetizados em tempo real.
+- Fonte de texto DejaVu Sans (licença livre).
+- Música e efeitos: composições originais, sintetizadas em tempo real.
 - Feito com PS2SDK, gsKit e SDL2 (port para PS2).

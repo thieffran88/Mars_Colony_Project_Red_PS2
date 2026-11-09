@@ -18,7 +18,7 @@ CFLAGS  := -D_EE -DPS2 -O2 -G0 -Wall -Wno-misleading-indentation \
 LDFLAGS := -T$(PS2SDK)/ee/startup/linkfile -L$(PORTS)/lib -L$(PS2SDK)/ee/lib -L$(GSKIT)/lib
 LIBS    := -lSDL2main -lSDL2 -lm -lpatches -lgskit -ldmakit -lps2_drivers -laudsrv
 
-SRC     := src/main.c src/game.c src/ai.c src/render.c src/audio.c src/artdata.c
+SRC     := src/main.c src/game.c src/ai.c src/render.c src/audio.c src/synth.c src/artdata.c
 BUILD   := build/ps2
 ELF     := $(BUILD)/MARSCOL_UNPACKED.ELF
 FINAL   := dist/MARSCOL.ELF

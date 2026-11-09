@@ -95,6 +95,7 @@ static Uint32 frame;
 static int cfgNp = 2;
 static int cfgSlot[MAXP] = { 0, 2, 2, 2 };   /* 0 humano, 1 facil, 2 normal, 3 dificil */
 static int cfgDraft = 0, cfgSpeed = 0;
+static int cfgMusic = 6, cfgSfx = 8;     /* volumes 0..10 */
 static int setupSel = 0, titleSel = 0;
 static const char *SLOT_NAME[4] = { "Humano", "CPU Fácil", "CPU Normal", "CPU Difícil" };
 static const char *SPEED_NAME[3] = { "Normal", "Rápida", "Instantânea" };
@@ -481,6 +482,14 @@ static int human_turn_now(void) {
     return G.phase != PH_OVER && G.decider >= 0 && G.p[G.decider].human && !autoplayHuman;
 }
 
+/* barra de volume 0..10 com setas */
+static void volume_bar(int x, int y, int v) {
+    r_text(FONT_SMALL, x, y, "<", WHITE, 0);
+    for (int i = 0; i < 10; i++)
+        r_rect(x + 10 + i * 9, y + 10 - i, 7, 3 + i, i < v ? RGBA(255, 170, 80, 255) : RGBA(80, 70, 90, 255));
+    r_text(FONT_SMALL, x + 104, y, ">", WHITE, 0);
+}
+
 static int pill(int x, const char *txt, Color c) {
     int w = r_text_w(FONT_SMALL, txt) + 14;
     r_rrect(x, 2, w, 17, RGBA(10, 8, 20, 255));
@@ -643,13 +652,16 @@ static void draw_game(void) {
     /* pausa */
     if (paused) {
         r_rect(0, 0, SCREEN_W, SCREEN_H, RGBA(0, 0, 0, 160));
-        panel(200, 140, 240, 150, RGBA(255, 120, 80, 255));
-        r_text_center(FONT_MED, 320, 150, "PAUSA", RGBA(255, 220, 160, 255));
-        const char *it[3] = { "Continuar", "Como jogar", "Sair para o título" };
-        for (int i = 0; i < 3; i++) {
-            int yy = 185 + i * 28;
-            if (i == pauseSel) r_rect(214, yy - 3, 212, 22, RGBA(200, 80, 50, 200));
-            r_text_center(FONT_MED, 320, yy, it[i], RGBA(255, 255, 255, 255));
+        panel(190, 120, 260, 196, RGBA(255, 120, 80, 255));
+        r_chrome_center(320, 130, 18, "PAUSA", RGBA(255, 210, 170, 255));
+        const char *it[5] = { "Continuar", "Música", "Efeitos", "Como jogar", "Sair para o título" };
+        for (int i = 0; i < 5; i++) {
+            int yy = 166 + i * 28;
+            if (i == pauseSel) r_rect(204, yy - 3, 232, 22, RGBA(200, 80, 50, 200));
+            if (i == 1 || i == 2) {
+                r_text(FONT_MED, 214, yy, it[i], WHITE, 0);
+                volume_bar(310, yy + 2, i == 1 ? cfgMusic : cfgSfx);
+            } else r_text_center(FONT_MED, 320, yy, it[i], WHITE);
         }
     }
 }
@@ -657,16 +669,37 @@ static void draw_game(void) {
 /* ------------------------------------------------------------------ */
 /* logica da cena de jogo                                               */
 
-static void sfx_for(const Option *o) {
+/* som da escolha em si */
+static int sfx_for(const Option *o) {
     switch (o->kind) {
-    case OPT_PLAY_HAND: case OPT_PLAY_PREP: case OPT_PLAY_OPP: case OPT_CARD: case OPT_DRAFT: case OPT_TUCK:
-        audio_sfx(SFX_CARD); break;
-    case OPT_SHIP_TO: case OPT_MOVE_YES: case OPT_PROMOTE: case OPT_ECO_MOVE: case OPT_SWITCH:
-        audio_sfx(SFX_LAND); break;
-    case OPT_DISCARD_ENERGY: audio_sfx(SFX_ENERGY); break;
-    case OPT_TAKE_EARTH: case OPT_TAKE_EARTH_FX: audio_sfx(SFX_LAND); break;
-    default: audio_sfx(SFX_OK); break;
+    case OPT_PLAY_HAND: case OPT_PLAY_PREP: case OPT_CARD: case OPT_DRAFT: case OPT_TUCK: return SFX_CARD;
+    case OPT_PLAY_OPP: return SFX_REVEAL;
+    case OPT_SKIP: case OPT_PASS: return SFX_BACK;
+    case OPT_DEMOTE: return SFX_ERROR;
+    default: return -1;   /* o efeito no tabuleiro decide (ver event_sounds) */
     }
+}
+
+typedef struct { int mars, star2, earth, energy, ndeck; } Snap;
+static Snap snap_state(void) {
+    Snap s = { 0, 0, 0, 0, G.ndeck };
+    for (int p = 0; p < G.np; p++) {
+        s.mars += game_on_mars(&G, p); s.earth += G.p[p].earth; s.energy += G.p[p].energy;
+        for (int b = 0; b < 4; b++) s.star2 += G.b[b].star2[p];
+    }
+    return s;
+}
+
+/* sons do que mudou no tabuleiro (inclui habilidades automaticas dos edificios) */
+static void event_sounds(const Snap *a, const Snap *b, int first) {
+    int n = first >= 0;
+    if (first >= 0) audio_sfx(first);
+    if (n < 2 && b->mars > a->mars) { audio_sfx(SFX_LAND); n++; }
+    if (n < 2 && b->star2 > a->star2) { audio_sfx(SFX_PROMOTE); n++; }
+    if (n < 2 && b->earth < a->earth) { audio_sfx(SFX_LAUNCH); n++; }
+    if (n < 2 && b->energy > a->energy) { audio_sfx(SFX_ENERGY); n++; }
+    if (n < 2 && b->ndeck < a->ndeck && G.phase != PH_SETUP_PREP) { audio_sfx(SFX_DRAW); n++; }
+    if (n == 0) audio_sfx(SFX_OK);
 }
 
 static void apply_option(int idx) {
@@ -688,8 +721,11 @@ static void apply_option(int idx) {
             if (cfgSpeed == 0 && !G.p[who].human) cpuReadyAt = popupUntil;
         }
     }
-    sfx_for(&o);
+    Snap before = snap_state();
+    int first = sfx_for(&o);
     game_apply(&G, &o);
+    Snap after = snap_state();
+    event_sounds(&before, &after, first);
     if (G.lastBld < 5) { flashBld = G.lastBld; flashUntil = SDL_GetTicks() + 900; G.lastBld = 255; }
     if (G.chance || (G.decider != undoOwner && G.phase != PH_ACTION)) undoOk = 0;
     if (G.phase == PH_ACTION) undoOk = 0;
@@ -714,14 +750,21 @@ static int focused_card(void) {
 
 static void update_game(void) {
     if (paused) {
-        if (pressed[B_UP]) { pauseSel = (pauseSel + 2) % 3; audio_sfx(SFX_MOVE); }
-        if (pressed[B_DOWN]) { pauseSel = (pauseSel + 1) % 3; audio_sfx(SFX_MOVE); }
+        if (pressed[B_UP]) { pauseSel = (pauseSel + 4) % 5; audio_sfx(SFX_MOVE); }
+        if (pressed[B_DOWN]) { pauseSel = (pauseSel + 1) % 5; audio_sfx(SFX_MOVE); }
+        int dir = pressed[B_RIGHT] ? 1 : pressed[B_LEFT] ? -1 : 0;
+        if (dir && (pauseSel == 1 || pauseSel == 2)) {
+            int *v = pauseSel == 1 ? &cfgMusic : &cfgSfx;
+            *v += dir; if (*v < 0) *v = 0; if (*v > 10) *v = 10;
+            audio_volume(cfgMusic, cfgSfx);
+            audio_sfx(SFX_MOVE);
+        }
         if (pressed[B_START] || pressed[B_BACK]) { paused = 0; audio_sfx(SFX_BACK); }
         if (pressed[B_OK]) {
             audio_sfx(SFX_OK);
             if (pauseSel == 0) paused = 0;
-            else if (pauseSel == 1) { paused = 0; rulesReturn = SC_GAME; rulesPage = 0; scene = SC_RULES; }
-            else { paused = 0; scene = SC_TITLE; audio_music(1); }
+            else if (pauseSel == 3) { paused = 0; rulesReturn = SC_GAME; rulesPage = 0; scene = SC_RULES; }
+            else if (pauseSel == 4) { paused = 0; scene = SC_TITLE; }
         }
         return;
     }
@@ -759,6 +802,7 @@ static void update_game(void) {
         /* nova decisao humana de acao: salvar estado para desfazer */
         if (G.phase == PH_ACTION && G.p[G.decider].human) {
             undoSnap = G; undoOk = 1; undoOwner = G.decider;
+            if (!autoplayHuman) audio_sfx(SFX_ALERT);
         }
     }
     int d = G.decider;
@@ -839,7 +883,7 @@ static void update_title(void) {
 /* ------------------------------------------------------------------ */
 /* configuracao                                                         */
 
-#define SETUP_ROWS 8
+#define SETUP_ROWS 10
 static void draw_setup(void) {
     draw_space();
     r_mars(520, 320, 120);
@@ -847,9 +891,9 @@ static void draw_setup(void) {
     panel(24, 70, 420, 340, RGBA(200, 90, 60, 255));
     char t[64];
     for (int i = 0; i < SETUP_ROWS; i++) {
-        int y = 84 + i * 38;
+        int y = 82 + i * 32;
         int dis = (i >= 1 && i <= 4 && i - 1 >= cfgNp);
-        if (i == setupSel) r_rrect(32, y - 6, 404, 30, RGBA(200, 70, 40, 190));
+        if (i == setupSel) r_rrect(32, y - 5, 404, 27, RGBA(200, 70, 40, 190));
         Color lc = dis ? RGBA(110, 110, 120, 255) : WHITE;
         if (i == 0) {
             r_text(FONT_MED, 44, y, "Jogadores", lc, 0);
@@ -865,6 +909,10 @@ static void draw_setup(void) {
         } else if (i == 6) {
             r_text(FONT_MED, 44, y, "Velocidade da CPU", lc, 0);
             snprintf(t, sizeof t, "< %s >", SPEED_NAME[cfgSpeed]);
+        } else if (i == 7 || i == 8) {
+            r_text(FONT_MED, 44, y, i == 7 ? "Volume da música" : "Volume dos efeitos", lc, 0);
+            volume_bar(316, y + 1, i == 7 ? cfgMusic : cfgSfx);
+            continue;
         } else {
             r_text_center(FONT_MED, 234, y, "{R} INICIAR MISSÃO", RGBA(255, 230, 160, 255));
             continue;
@@ -883,15 +931,20 @@ static void update_setup(void) {
     if (pressed[B_UP]) { do setupSel = (setupSel + SETUP_ROWS - 1) % SETUP_ROWS; while (setupSel >= 1 && setupSel <= 4 && setupSel - 1 >= cfgNp); audio_sfx(SFX_MOVE); }
     if (pressed[B_DOWN]) { do setupSel = (setupSel + 1) % SETUP_ROWS; while (setupSel >= 1 && setupSel <= 4 && setupSel - 1 >= cfgNp); audio_sfx(SFX_MOVE); }
     int dir = pressed[B_RIGHT] ? 1 : pressed[B_LEFT] ? -1 : 0;
-    if (pressed[B_OK] && setupSel != 7) dir = 1;
+    if (pressed[B_OK] && setupSel != 9 && setupSel != 7 && setupSel != 8) dir = 1;
     if (dir) {
         audio_sfx(SFX_MOVE);
         if (setupSel == 0) { cfgNp += dir; if (cfgNp > 4) cfgNp = 2; if (cfgNp < 2) cfgNp = 4; }
         else if (setupSel <= 4) { int p = setupSel - 1; cfgSlot[p] = (cfgSlot[p] + 4 + dir) % 4; }
         else if (setupSel == 5) cfgDraft = !cfgDraft;
         else if (setupSel == 6) cfgSpeed = (cfgSpeed + 3 + dir) % 3;
+        else if (setupSel == 7 || setupSel == 8) {
+            int *v = setupSel == 7 ? &cfgMusic : &cfgSfx;
+            *v += dir; if (*v < 0) *v = 0; if (*v > 10) *v = 10;
+            audio_volume(cfgMusic, cfgSfx);
+        }
     }
-    if ((pressed[B_OK] && setupSel == 7) || pressed[B_START]) { audio_sfx(SFX_OK); start_game(); }
+    if ((pressed[B_OK] && setupSel == 9) || pressed[B_START]) { audio_sfx(SFX_OK); start_game(); }
     if (pressed[B_BACK]) { audio_sfx(SFX_BACK); scene = SC_TITLE; }
 }
 
@@ -1065,7 +1118,7 @@ static void draw_credits(void) {
         "fornecidas pelo jogador. Nomes, cartas, efeitos e código deste jogo são originais.\n\n"
         "Arte das cartas, personagens, logotipo e fonte cromada: fornecidos pelo jogador.\n"
         "Fonte de texto: DejaVu Sans (licença livre).\n"
-        "Música e efeitos: sintetizados em tempo real.\n\n"
+        "Música: 3 trilhas espaciais originais (Horizonte Vermelho, Colônia à Deriva e fanfarra de vitória) e efeitos de ficção científica, sintetizados em tempo real.\n\n"
         "Projeto de fã, sem fins comerciais.",
         RGBA(235, 235, 235, 255), 16);
     const SprRect *a = &ART_MASC[MASC_CHEER], *b = &ART_MASC[MASC_ROBOT];
@@ -1170,8 +1223,11 @@ static int autotest(const char *dir) {
 
 int main(int argc, char **argv) {
     const char *autodir = NULL;
-    for (int i = 1; i < argc; i++)
+    int demo = 0;
+    for (int i = 1; i < argc; i++) {
         if (!strcmp(argv[i], "--autotest") && i + 1 < argc) autodir = argv[++i];
+        else if (!strcmp(argv[i], "--demo")) demo = 1;   /* partida so de CPUs (testes) */
+    }
 
     SDL_SetHint(SDL_HINT_RENDER_SCALE_QUALITY, "1");
     if (SDL_Init(SDL_INIT_VIDEO | SDL_INIT_GAMECONTROLLER | SDL_INIT_JOYSTICK) != 0) {
@@ -1199,7 +1255,13 @@ int main(int argc, char **argv) {
     (void)autodir;
 #endif
     audio_init();
-    audio_music(1);
+    audio_volume(cfgMusic, cfgSfx);
+    int lastScene = -1;
+    Uint32 demoEnd = 0;
+    if (demo) {
+        cfgNp = 3; cfgSlot[0] = cfgSlot[1] = cfgSlot[2] = 2; cfgSpeed = 1;
+        start_game();
+    }
 
     while (!quitReq) {
         Uint32 t0 = SDL_GetTicks();
@@ -1212,11 +1274,22 @@ int main(int argc, char **argv) {
         case SC_RULES: update_rules(); break;
         case SC_CREDITS: if (pressed[B_BACK] || pressed[B_OK]) { scene = SC_TITLE; audio_sfx(SFX_BACK); } break;
         }
+        if (scene != lastScene) {
+            /* trilha por cena; a fanfarra de vitoria e disparada pelo SFX_WIN */
+            if (scene == SC_GAME) audio_music(TRACK_GAME);
+            else if (scene == SC_RULES && rulesReturn == SC_GAME) { /* mantem a trilha da partida */ }
+            else if (scene != SC_OVER) audio_music(TRACK_TITLE);
+            lastScene = scene;
+        }
         SDL_SetRenderDrawColor(R, 0, 0, 0, 255);
         SDL_RenderClear(R);
         draw_scene();
         present();
         frame++;
+        if (demo && scene == SC_OVER) {
+            if (!demoEnd) demoEnd = SDL_GetTicks() + 6000;
+            else if (SDL_GetTicks() > demoEnd) quitReq = 1;
+        }
         Uint32 dt = SDL_GetTicks() - t0;
         if (dt < 16) SDL_Delay(16 - dt);
     }

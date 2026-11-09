@@ -3,3 +3,4 @@ marscolony
 sim
 *.o
 __pycache__/
+audio_render
