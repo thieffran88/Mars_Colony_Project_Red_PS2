@@ -3,11 +3,11 @@ CC      ?= gcc
 CFLAGS  ?= -O2 -Wall -Wextra -Wno-misleading-indentation
 SDLCF   := $(shell sdl2-config --cflags)
 SDLLIB  := $(shell sdl2-config --libs)
-SRC     := src/main.c src/game.c src/ai.c src/render.c src/audio.c
+SRC     := src/main.c src/game.c src/ai.c src/render.c src/audio.c src/artdata.c
 
 all: marscolony sim
 
-marscolony: $(SRC) src/*.h
+marscolony: $(SRC) src/*.h data/art.rle data/title.rle
 	$(CC) $(CFLAGS) $(SDLCF) -o $@ $(SRC) $(SDLLIB) -lm
 
 sim: tests/sim.c src/game.c src/ai.c src/game.h src/ai.h
@@ -18,6 +18,7 @@ test: sim
 
 assets:
 	python3 tools/gen_assets.py
+	python3 tools/gen_art.py
 
 clean:
 	rm -f marscolony sim

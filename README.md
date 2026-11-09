@@ -6,6 +6,8 @@ arte e código deste jogo são originais.
 
 ![Título](docs/titulo.png)
 ![Partida](docs/jogo.png)
+![Carta em tamanho grande](docs/carta.png)
+![Fim de jogo](docs/fim.png)
 
 ## Como jogar no PS2 / emulador
 
@@ -27,10 +29,11 @@ A ISO usa `SYSTEM.CNF` com `BOOT2 = cdrom0:\MARSCOL.ELF;1` (NTSC, 640x448). Tudo
 | ✕ | Confirmar |
 | ○ | Voltar / **desfazer** a jogada do turno (enquanto não houve compra de cartas) |
 | △ | Modo inspecionar: percorre edifícios e jogadores mostrando detalhes e pontuação |
+| □ | Ver a carta em foco (ou a última carta revelada) em tamanho grande |
 | L1 / R1 | Rolar listas longas |
 | START | Pausa (continuar, regras, sair) |
 
-No PC: setas, Enter/Z, Esc/X, Tab, P.
+No PC: setas, Enter/Z, Esc/X, Tab, R (ver carta), P.
 
 ## Modos
 
@@ -38,7 +41,8 @@ No PC: setas, Enter/Z, Esc/X, Tab, P.
 - Vários humanos jogam em *hot-seat*: há uma tela "passe o controle" e as cartas ficam ocultas entre os turnos.
 - Variante opcional de **draft** de cartas (do livro de regras).
 - Velocidade da CPU: normal, rápida ou instantânea.
-- Tutorial "Como jogar" com 8 páginas dentro do jogo.
+- Tutorial "Como jogar" com 9 páginas dentro do jogo (inclui a anatomia da carta e o mapa de botões).
+- Quando a CPU joga ou revela uma carta, ela aparece em destaque por alguns instantes.
 
 ## Regras implementadas
 
@@ -59,6 +63,30 @@ livro não traz o texto das 35 cartas de projeto. Por isso:
   valor de 4 jogadores aparece no PDF).
 - As **35 cartas de projeto** (5 cores × 7, valores 0–7) foram criadas para este jogo em `src/game.c`
   (tabela `CARDS`), usando os tipos de efeito que o livro mostra nos exemplos. Dá para rebalancear editando essa tabela.
+
+## Arte
+
+A arte enviada fica em `art_src/` (folhas das 35 cartas, key art, mascotes e prédios, fonte
+cromada e botões do controle). O script `tools/gen_art.py` recorta tudo automaticamente
+(remove o fundo branco, separa as letras itálicas da fonte e sintetiza os acentos Á Â Ã É Ê Í Ó Ô Õ Ú Ç)
+e gera as texturas em `data/` mais as posições em `src/art.h`.
+
+Onde cada item aparece:
+- **Key art**: tela de título.
+- **Ilustrações das cartas**: cartas na mão/módulo, topo das pilhas dos edifícios, carta em
+  tamanho grande (□) e carta revelada pela CPU. A carta grande reproduz o layout das folhas enviadas.
+- **Prédios**: dentro dos painéis dos 5 edifícios.
+- **Mascotes**: astronauta apontando para as opções no seu turno, robô quando a CPU pensa,
+  comemoração no fim de jogo, "joinha" na troca de jogador e na configuração.
+- **Fonte cromada**: títulos das telas e nomes dos jogadores.
+- **Botões do controle**: dicas na tela e página de controles.
+
+**Orçamento de VRAM do PS2.** Depois dos framebuffers sobra ~1 MB de VRAM para texturas, por isso:
+atlas de texto/ícones 512x256 RGBA (512 KB), arte 512x512 em 16 bits (512 KB) e key art + botões
+512x512 em 16 bits (512 KB). Cada tela usa no máximo duas dessas texturas (≈1 MB). Isso foi
+calculado a partir da configuração do SDL2 para PS2, mas não pude medir em hardware real.
+
+Para regenerar: `make assets` (requer Pillow, numpy e scipy).
 
 ## Compilar
 
@@ -89,7 +117,10 @@ src/ai.c/.h      IA da CPU (busca das jogadas do turno + heurística de pontuaç
 src/render.c/.h  desenho com SDL2: atlas, texto UTF-8 com ícones embutidos
 src/audio.c/.h   sintetizador de efeitos e trilha ambiente
 src/main.c       telas: título, configuração, jogo, pausa, regras, fim, créditos
-src/assets.h     fonte/ícones/planeta gerados por tools/gen_assets.py
+src/assets.h     fonte/ícones gerados por tools/gen_assets.py
+src/art.h        posições da arte gerada por tools/gen_art.py
+src/artdata.c    embute data/art.rle e data/title.rle no executável
+art_src/         arte original enviada
 tests/sim.c      simulador e verificador de invariantes
 ps2/SYSTEM.CNF   boot do disco
 ```
@@ -97,5 +128,6 @@ ps2/SYSTEM.CNF   boot do disco
 ## Créditos
 
 - Mecânicas: adaptadas das regras de *Pocket Mars* (design de Michał Jagodziński, Board&Dice). Projeto de fã, sem fins comerciais.
-- Fonte DejaVu Sans (licença livre). Música e efeitos sintetizados em tempo real.
+- Arte das cartas, personagens, key art, fonte cromada e botões: fornecidos pelo autor do projeto.
+- Fonte de texto DejaVu Sans (licença livre). Música e efeitos sintetizados em tempo real.
 - Feito com PS2SDK, gsKit e SDL2 (port para PS2).

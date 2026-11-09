@@ -5,7 +5,7 @@ Marte em RGBA. Tudo e embutido no executavel (o PS2 nao precisa ler arquivos).
 Uso: python3 tools/gen_assets.py
 Fonte: DejaVu Sans (licenca Bitstream Vera / DejaVu, livre para embutir).
 """
-import math, os, random
+import math, os, random, sys
 from PIL import Image, ImageDraw, ImageFont, ImageFilter
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -16,7 +16,6 @@ W = 512
 FONTS = [  # nome, arquivo, tamanho
     ("S", "DejaVuSans.ttf", 12),
     ("M", "DejaVuSans-Bold.ttf", 15),
-    ("L", "DejaVuSans-Bold.ttf", 30),
 ]
 CPS = list(range(32, 256))
 ICON_NAMES = ["leaf", "bulb", "atom", "drop", "gear", "star", "bolt", "colonist",
@@ -207,9 +206,22 @@ def main():
     for i, n in enumerate(ICON_NAMES):
         items.append((("I32", i), draw_icon(n, 32)))
         items.append((("I16", i), draw_icon(n, 16)))
-    MARS = 128
-    mars = make_mars(MARS)
-    items.append((("MARS",), Image.new("L", (MARS, MARS), 0)))
+    # botoes do controle (coloridos, alpha suave) para os textos de ajuda
+    sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+    import gen_art
+    padimg = Image.open(os.path.join(ROOT, "art_src", "pad_buttons.png")).convert("RGB")
+    PADBOX = [(562, 587, 691, 727), (682, 461, 806, 596), (564, 337, 686, 469),
+              (449, 461, 573, 596), (1104, 832, 1247, 941)]
+    pads = [gen_art.sticker(padimg, b, 26 if i == 4 else 16, 16, thr=None) for i, b in enumerate(PADBOX)]
+    PW = sum(p.width + 1 for p in pads)
+    padstrip = Image.new("RGBA", (PW, 16), (0, 0, 0, 0))
+    padpos = []
+    px = 0
+    for p in pads:
+        padstrip.alpha_composite(p, (px, (16 - p.height) // 2))
+        padpos.append((px, p.width))
+        px += p.width + 1
+    items.append((("PADS",), Image.new("L", (PW, 16), 0)))
 
     # empacotamento em prateleiras
     items.sort(key=lambda it: -it[1].size[1])
@@ -275,10 +287,11 @@ def main():
             f.write(",".join("{%d,%d}" % pos[(key, i)] for i in range(len(ICON_NAMES))))
             f.write("};\n")
         f.write('#include "icons.h"\n')
-        mx, my = pos[("MARS",)]
-        f.write("#define MARS_X %d\n#define MARS_Y %d\n#define MARS_S %d\n" % (mx, my, MARS))
-        f.write("static const uint8_t MARS_RGBA[] = {\n")
-        mb = mars.tobytes()
+        mx, my = pos[("PADS",)]
+        f.write("#define PADS_X %d\n#define PADS_Y %d\n#define PADS_W %d\n#define PADS_H 16\n" % (mx, my, PW))
+        f.write("static const int16_t PADS_POS[5][2] = {%s};\n" % ",".join("{%d,%d}" % (mx + a, b) for a, b in padpos))
+        f.write("static const uint8_t PADS_RGBA[] = {\n")
+        mb = padstrip.tobytes()
         for k in range(0, len(mb), 48):
             f.write(",".join(str(b) for b in mb[k:k + 48]) + ",\n")
         f.write("};\n#endif\n")

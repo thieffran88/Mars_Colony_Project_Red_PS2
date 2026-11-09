@@ -34,7 +34,7 @@ static int key_button(SDL_Keycode k) {
     case SDLK_ESCAPE: case SDLK_x: case SDLK_BACKSPACE: return B_BACK;
     case SDLK_TAB: case SDLK_i: return B_INFO;
     case SDLK_p: case SDLK_F1: return B_START;
-    case SDLK_r: return B_SELECT;
+    case SDLK_r: case SDLK_c: return B_SELECT;
     case SDLK_q: return B_L1;        case SDLK_e: return B_R1;
     }
     return -1;
@@ -115,6 +115,9 @@ static int overSel;
 static int rulesPage;
 static int flashBld = -1; static Uint32 flashUntil;
 static int autoplayHuman; /* testes: CPU joga pelo humano */
+static int zoomCard = -1, popupCard = -1, lastCard = -1;
+static Uint32 popupUntil;
+static char popupText[64];
 
 static int num_humans(void) {
     int n = 0;
@@ -175,15 +178,74 @@ static void draw_card_mini(int x, int y, int w, int h, int card, int hl, int dim
     const CardDef *cd = &CARDS[card];
     Color base = COL_BLD[cd->color];
     if (hl) { r_rrect(x - 3, y - 3, w + 6, h + 6, RGBA(255, 255, 255, 120 + (int)(100 * sinf(frame * 0.2f)))); }
-    r_rrect(x, y, w, h, c_mul(base, dim ? 0.35f : 0.55f));
-    r_rect(x + 2, y + 2, w - 4, 16, c_mul(base, dim ? 0.5f : 1.0f));
+    r_rrect(x, y, w, h, RGBA(15, 14, 20, 255));
+    r_rrect(x + 1, y + 1, w - 2, h - 2, c_mul(base, dim ? 0.45f : 0.95f));
     char v[4]; snprintf(v, sizeof v, "%d", cd->value);
-    r_text(FONT_MED, x + 4, y + 1, v, RGBA(255, 255, 255, 255), 0);
-    if (w >= 34) r_text(FONT_MED, x + w - 4 - r_text_w(FONT_MED, v), y + 1, v, RGBA(255, 255, 255, 160), 0);
-    int is = w >= 50 ? 24 : 16;
-    r_icon(IC_LEAF + cd->color, x + (w - is) / 2, y + 22, is, RGBA(255, 255, 255, dim ? 90 : 210));
-    if (w >= 50 && h >= 70)
-        r_text_wrap(FONT_SMALL, x + 4, y + 22 + is + 2, w - 8, cd->name, RGBA(240, 240, 240, dim ? 120 : 255), 12);
+    int hh = h >= 60 ? 16 : 14;
+    r_text(FONT_MED, x + 4, y + 1, v, WHITE, 0);
+    if (w >= 40) r_text(FONT_MED, x + w - 4 - r_text_w(FONT_MED, v), y + 1, v, RGBA(255, 255, 255, 170), 0);
+    else if (w >= 26) r_icon(IC_LEAF + cd->color, x + w - 14, y + 2, 12, RGBA(255, 255, 255, 220));
+    int ay = y + hh;
+    if (w >= 50 && h >= 70) {
+        int th = r_text_wrap(FONT_SMALL, x + 4, y + hh, w - 8, cd->name, RGBA(255, 255, 255, dim ? 120 : 255), 11);
+        ay = y + hh + (th > 22 ? 22 : th) + 1;
+    }
+    int ah = y + h - 3 - ay;
+    r_rrect(x + 3, ay, w - 6, ah, RGBA(250, 250, 252, dim ? 120 : 235));
+    r_art_fit(&ART_CARD[card], x + 4, ay + 1, w - 8, ah - 2, dim ? RGBA(255, 255, 255, 110) : WHITE);
+}
+
+/* carta completa, no estilo das cartas impressas (w ~ 200 => h = 1.48 w) */
+static void draw_card_full(int x, int y, int w, int card) {
+    const CardDef *cd = &CARDS[card];
+    Color base = COL_BLD[cd->color];
+    float k = w / 200.0f;
+    int h = (int)(w * 1.48f);
+#define K(v) ((int)((v) * k + 0.5f))
+    r_rect(x + K(6), y + K(6), w, h, RGBA(0, 0, 0, 110));
+    r_rrect(x, y, w, h, RGBA(22, 22, 30, 255));
+    r_rrect(x + K(4), y + K(4), w - K(8), h - K(8), RGBA(246, 246, 249, 255));
+    /* cabecalho */
+    r_rrect(x + K(9), y + K(9), w - K(18), K(26), base);
+    r_rect(x + K(14), y + K(11), w - K(70), K(2), RGBA(255, 255, 255, 120));
+    r_icon(IC_LEAF + cd->color, x + K(14), y + K(13), K(18), WHITE);
+    r_text_scale(k);
+    r_text(FONT_MED, x + K(36), y + K(13), BLD_NAME[cd->color], WHITE, w - K(80));
+    r_rrect(x + w - K(40), y + K(11), K(26), K(22), RGBA(22, 22, 30, 255));
+    char v[8]; snprintf(v, sizeof v, "%d", cd->value);
+    r_text_scale(k * 1.25f);
+    r_text_center(FONT_MED, x + w - K(27), y + K(12), v, WHITE);
+    /* nome */
+    r_text_scale(k);
+    r_text_center(FONT_MED, x + w / 2, y + K(42), cd->name, RGBA(25, 25, 35, 255));
+    r_rect(x + K(16), y + K(61), w - K(32), K(3) > 0 ? K(3) : 1, base);
+    /* janela da ilustracao */
+    int wx = x + K(12), wy = y + K(68), ww = w - K(24), wh = K(86);
+    r_rrect(wx, wy, ww, wh, base);
+    r_rrect(wx + K(3), wy + K(3), ww - K(6), wh - K(6), RGBA(255, 255, 255, 255));
+    r_art_fit(&ART_CARD[card], wx + K(8), wy + K(14), ww - K(16), wh - K(26), WHITE);
+    char tag[16]; snprintf(tag, sizeof tag, "#%02d", card + 1);
+    r_rrect(wx + K(6), wy + K(6), K(30), K(14), RGBA(30, 30, 40, 255));
+    r_text_scale(k * 0.85f);
+    r_text(FONT_SMALL, wx + K(10), wy + K(7), tag, WHITE, 0);
+    for (int dx = K(8); dx < ww - K(12); dx += K(12)) r_rect(wx + dx, wy + wh - K(9), K(6), K(2) > 0 ? K(2) : 1, base);
+    /* acoes */
+    for (int i = 0; i < 2; i++) {
+        int by = y + K(159) + i * K(62), bh = K(58);
+        r_rrect(x + K(10), by, w - K(20), bh, RGBA(30, 30, 40, 255));
+        r_rect(x + K(12), by + K(18), w - K(24), bh - K(20), RGBA(250, 250, 252, 255));
+        r_text_scale(k * 0.9f);
+        r_text(FONT_MED, x + K(16), by + K(2), i == 0 ? "AÇÃO DA MÃO" : "AÇÃO DO MÓDULO", WHITE, 0);
+        r_rrect(x + w - K(28), by + K(4), K(11), K(11), c_mul(base, 1.2f));
+        char buf[200];
+        game_fx_text(i == 0 ? &cd->top : &cd->bottom, buf, sizeof buf);
+        r_text_scale(k);
+        r_text_wrap(FONT_SMALL, x + K(15), by + K(21), w - K(30), buf, RGBA(30, 30, 40, 255), K(13));
+    }
+    r_text_scale(k * 0.7f);
+    r_text(FONT_SMALL, x + K(12), y + h - K(14), "MARS COLONY · PROJECT RED", RGBA(110, 110, 120, 255), 0);
+    r_text_scale(1.0f);
+#undef K
 }
 
 static void draw_card_back(int x, int y, int w, int h, int color, int hl) {
@@ -233,6 +295,7 @@ static void draw_building(int b, int x, int y, int w, int h, int hl) {
         int lw = w * 52 / 100;
         r_rect(x + 3, cy, lw - 4, 70, RGBA(255, 255, 255, 14));
         r_rect(x + lw + 1, cy, w - lw - 4, 70, RGBA(255, 220, 120, 22));
+        r_art_fit(&ART_BLD[b], x + 4, cy + 30, lw - 6, 40, RGBA(255, 255, 255, 235));
         r_text(FONT_SMALL, x + 5, cy + 1, "{S} 2pt", RGBA(220, 220, 220, 255), 0);
         r_text(FONT_SMALL, x + lw + 3, cy + 1, "{D}4pt", RGBA(255, 225, 150, 255), 0);
         int row = 0;
@@ -257,7 +320,8 @@ static void draw_building(int b, int x, int y, int w, int h, int hl) {
             r_frame(sx, sy, w - lw - 12, 22, RGBA(255, 220, 120, 90));
         }
     } else {
-        r_text_wrap(FONT_SMALL, x + 6, cy + 4, w - 12, "Não abriga colonos. Recebe cartas de construção.", RGBA(190, 190, 200, 255), 13);
+        r_text_wrap(FONT_SMALL, x + 6, cy + 2, w - 12, "Não abriga colonos. Recebe cartas de construção.", RGBA(190, 190, 200, 255), 13);
+        r_art_fit(&ART_BLD[b], x + w - 64, cy + 34, 60, 36, WHITE);
     }
     /* habilidade */
     int ay = y + 95;
@@ -290,9 +354,8 @@ static void draw_player_strip(int y, int hlPlayer, int hlPrep) {
         if (turn) r_frame(x + 1, y + 1, w - 2, 50, c_alpha(COL_PLAYER[p], 120 + (int)(100 * sinf(frame * 0.15f))));
         r_rect(x + 1, y + 1, 4, 50, COL_PLAYER[p]);
         char t[48];
-        if (P->human) snprintf(t, sizeof t, "%s", PLAYER_NAME[p]);
-        else snprintf(t, sizeof t, "%s (CPU)", PLAYER_NAME[p]);
-        r_text(FONT_MED, x + 9, y + 2, t, COL_PLAYER[p], w - 60);
+        int nw = r_chrome(x + 9, y + 4, 12, PLAYER_NAME[p], c_mul(COL_PLAYER[p], 1.15f));
+        if (!P->human) r_text(FONT_SMALL, x + 14 + nw, y + 3, "CPU", RGBA(200, 200, 210, 255), 0);
         if (G.start == p) r_text(FONT_SMALL, x + w - 34, y + 4, "1º", RGBA(255, 220, 120, 255), 0);
         int ix = x + 9, iy = y + 20;
         snprintf(t, sizeof t, "{R}%d", P->ship); ix += r_text(FONT_SMALL, ix, iy, t, RGBA(255, 255, 255, 255), 0) + 6;
@@ -418,16 +481,26 @@ static int human_turn_now(void) {
     return G.phase != PH_OVER && G.decider >= 0 && G.p[G.decider].human && !autoplayHuman;
 }
 
+static int pill(int x, const char *txt, Color c) {
+    int w = r_text_w(FONT_SMALL, txt) + 14;
+    r_rrect(x, 2, w, 17, RGBA(10, 8, 20, 255));
+    r_rrect(x + 1, 3, w - 2, 15, RGBA(42, 34, 66, 255));
+    r_text(FONT_SMALL, x + 7, 4, txt, c, 0);
+    return w;
+}
+
 static void draw_game(void) {
     draw_space();
     /* barra superior */
-    r_rect(0, 0, SCREEN_W, 20, RGBA(0, 0, 0, 150));
+    r_rect(0, 0, SCREEN_W, 21, RGBA(0, 0, 0, 120));
     char t[160];
-    snprintf(t, sizeof t, "RODADA %d   {K} Baralho %d   Descarte %d", G.round, G.ndeck, G.ndiscard);
-    r_text(FONT_SMALL, 6, 3, t, RGBA(255, 230, 200, 255), 0);
+    int bx = 4;
+    snprintf(t, sizeof t, "RODADA %d", G.round); bx += pill(bx, t, RGBA(255, 230, 200, 255)) + 4;
+    snprintf(t, sizeof t, "{K} Baralho %d", G.ndeck); bx += pill(bx, t, WHITE) + 4;
+    snprintf(t, sizeof t, "Descarte %d", G.ndiscard); pill(bx, t, WHITE);
     const char *hint = human_turn_now()
-        ? (undoOk && G.phase != PH_ACTION ? "{X} OK  {O} Desfazer  {T} Inspecionar  START Pausa" : "{X} OK  {T} Inspecionar  START Pausa")
-        : "{T} Inspecionar   START Pausa";
+        ? (undoOk && G.phase != PH_ACTION ? "{X} OK {O} Desfazer {Q} Carta {T} Info {Z}" : "{X} OK  {Q} Ver carta  {T} Inspecionar  {Z}")
+        : "{Q} Última carta  {T} Inspecionar  {Z}";
     if (inspect) hint = "{T}/{O} Sair   < > Navegar";
     r_text(FONT_SMALL, SCREEN_W - 6 - r_text_w(FONT_SMALL, hint), 3, hint, RGBA(220, 220, 230, 255), 0);
 
@@ -503,11 +576,16 @@ static void draw_game(void) {
     panel(px, py, pw, ph, RGBA(120, 70, 60, 255));
     if (G.phase == PH_OVER) {
         r_text_center(FONT_MED, px + pw / 2, py + 80, "Fim de jogo!", RGBA(255, 220, 120, 255));
+        r_art(&ART_MASC[MASC_CHEER], px + pw / 2 - 36, py + 110, ART_MASC[MASC_CHEER].w, ART_MASC[MASC_CHEER].h, WHITE);
     } else if (curtain) {
-        snprintf(t, sizeof t, "Vez de %s", PLAYER_NAME[G.decider]);
-        r_text_center(FONT_MED, px + pw / 2, py + 60, t, COL_PLAYER[G.decider]);
-        r_text_center(FONT_SMALL, px + pw / 2, py + 86, "Passe o controle e pressione {X}", RGBA(230, 230, 230, 255));
+        r_chrome_center(px + pw / 2 - 30, py + 50, 20, PLAYER_NAME[G.decider], c_mul(COL_PLAYER[G.decider], 1.15f));
+        r_text_center(FONT_SMALL, px + pw / 2 - 30, py + 84, "Sua vez! Passe o controle", RGBA(230, 230, 230, 255));
+        r_text_center(FONT_SMALL, px + pw / 2 - 30, py + 100, "e pressione {X}", RGBA(230, 230, 230, 255));
+        const SprRect *m = &ART_MASC[MASC_THUMBS];
+        r_art(m, px + pw - m->w - 10, py + ph - m->h - 10, m->w, m->h, WHITE);
     } else if (human_turn_now()) {
+        const SprRect *m = &ART_MASC[MASC_POINT];
+        int mx = px + pw - m->w - 2, my = py + 22;
         char pr[120];
         r_text(FONT_MED, px + 8, py + 5, phase_prompt(pr, sizeof pr), RGBA(255, 210, 160, 255), pw - 16);
         int rows = 8, rh = 16, ly = py + 26;
@@ -515,25 +593,51 @@ static void draw_game(void) {
         if (optSel >= optScroll + rows) optScroll = optSel - rows + 1;
         for (int i = optScroll; i < nopts && i < optScroll + rows; i++) {
             int ry = ly + (i - optScroll) * rh;
+            int maxw = (ry < my + m->h - 4) ? mx - px - 26 : pw - 32;
             if (i == optSel) {
-                r_rect(px + 4, ry - 1, pw - 8, rh, RGBA(200, 80, 50, 170 + (int)(40 * sinf(frame * 0.2f))));
-                r_icon(IC_ARROW, px + 7, ry + 1, 13, RGBA(255, 255, 255, 255));
+                r_rect(px + 4, ry - 1, maxw + 22, rh, RGBA(200, 80, 50, 170 + (int)(40 * sinf(frame * 0.2f))));
+                r_icon(IC_ARROW, px + 7, ry + 1, 13, WHITE);
             }
             char lb[160]; game_option_label(&G, &opts[i], lb, sizeof lb);
-            r_text(FONT_SMALL, px + 24, ry + 1, lb, i == optSel ? RGBA(255, 255, 255, 255) : RGBA(210, 210, 215, 255), pw - 32);
+            r_text(FONT_SMALL, px + 24, ry + 1, lb, i == optSel ? WHITE : RGBA(210, 210, 215, 255), maxw);
         }
-        if (optScroll > 0) r_text(FONT_SMALL, px + pw - 20, ly - 12, "^", RGBA(255, 255, 255, 200), 0);
-        if (optScroll + rows < nopts) r_text(FONT_SMALL, px + pw - 20, ly + rows * rh - 2, "v", RGBA(255, 255, 255, 200), 0);
+        if (optScroll > 0) r_text(FONT_SMALL, px + 8, ly - 12, "^", RGBA(255, 255, 255, 200), 0);
+        if (optScroll + rows < nopts) r_text(FONT_SMALL, px + 8, ly + rows * rh - 4, "v", RGBA(255, 255, 255, 200), 0);
+        /* mascote apontando para as opcoes */
+        int bob = (int)(2 * sinf(frame * 0.12f));
+        r_art(m, mx + bob, my, m->w, m->h, WHITE);
         r_rect(px + 6, py + ph - 48, pw - 12, 1, RGBA(255, 255, 255, 50));
-        draw_log(px + 8, py + ph - 45, pw - 16, 3);
+        const SprRect *rb = &ART_MASC[MASC_ROBOT];
+        int rw = rb->w * 3 / 4, rhh = rb->h * 3 / 4;
+        r_art(rb, px + pw - rw - 4, py + ph - rhh - 3, rw, rhh, WHITE);
+        draw_log(px + 8, py + ph - 45, pw - 22 - rw, 3);
     } else {
+        const SprRect *rb = &ART_MASC[MASC_ROBOT];
         if (G.decider >= 0) {
             int dots = (int)(frame / 15) % 4;
             snprintf(t, sizeof t, "%s está pensando%.*s", PLAYER_NAME[G.decider], dots, "...");
             r_icon(IC_CHIP, px + 8, py + 6, 16, COL_PLAYER[G.decider]);
             r_text(FONT_MED, px + 28, py + 5, t, COL_PLAYER[G.decider], pw - 36);
         }
-        draw_log(px + 8, py + 30, pw - 16, LOG_LINES);
+        draw_log(px + 8, py + 30, pw - 24 - rb->w, LOG_LINES);
+        int bob = (int)(3 * sinf(frame * 0.15f));
+        r_art(rb, px + pw - rb->w - 8, py + ph - rb->h - 8 + bob, rb->w, rb->h, WHITE);
+    }
+
+    /* carta revelada pela CPU */
+    if (popupCard >= 0 && SDL_GetTicks() < popupUntil && !paused && zoomCard < 0) {
+        int w = 150, h = (int)(w * 1.48f);
+        int x = 246, y = 22;
+        draw_card_full(x, y, w, popupCard);
+        r_rrect(x + 10, y + h + 2, w - 20, 16, RGBA(10, 8, 20, 220));
+        r_text_center(FONT_SMALL, x + w / 2, y + h + 3, popupText, WHITE);
+        (void)h;
+    }
+    /* zoom da carta */
+    if (zoomCard >= 0 && !paused) {
+        r_rect(0, 0, SCREEN_W, SCREEN_H, RGBA(0, 0, 0, 170));
+        draw_card_full(220, 6, 200, zoomCard);
+        r_text_center(FONT_SMALL, 320, 310, "{Q} / {O} Fechar", WHITE);
     }
 
     /* pausa */
@@ -568,6 +672,22 @@ static void sfx_for(const Option *o) {
 static void apply_option(int idx) {
     Option o = opts[idx];
     int who = G.decider;
+    int card = -1;
+    const char *how = NULL;
+    if (G.phase == PH_ACTION) {
+        if (o.kind == OPT_PLAY_HAND) { card = G.p[who].hand[o.a]; how = "joga da mão"; }
+        else if (o.kind == OPT_PLAY_PREP) { card = G.p[who].prep[o.a]; how = "conecta do módulo"; }
+        else if (o.kind == OPT_PLAY_OPP) { card = G.p[o.a].prep[o.b]; how = "revela módulo alheio"; }
+    }
+    if (card >= 0) {
+        lastCard = card;
+        if (!G.p[who].human || autoplayHuman || o.kind == OPT_PLAY_OPP) {
+            popupCard = card;
+            popupUntil = SDL_GetTicks() + (cfgSpeed == 0 ? 1700 : cfgSpeed == 1 ? 900 : 500);
+            snprintf(popupText, sizeof popupText, "%s %s", PLAYER_NAME[who], how);
+            if (cfgSpeed == 0 && !G.p[who].human) cpuReadyAt = popupUntil;
+        }
+    }
     sfx_for(&o);
     game_apply(&G, &o);
     if (G.lastBld < 5) { flashBld = G.lastBld; flashUntil = SDL_GetTicks() + 900; G.lastBld = 255; }
@@ -576,6 +696,20 @@ static void apply_option(int idx) {
     (void)who;
     optsDirty = 1;
     optSel = 0; optScroll = 0;
+}
+
+/* carta relacionada a opcao em foco (para o zoom com quadrado) */
+static int focused_card(void) {
+    if (!human_turn_now() || optSel >= nopts) return -1;
+    const Option *fo = &opts[optSel];
+    int h, pr;
+    option_card(fo, &h, &pr);
+    const Player *P = &G.p[G.decider];
+    if (h >= 0 && h < P->nhand) return P->hand[h];
+    if (pr >= 0 && pr < P->nprep) return P->prep[pr];
+    if (fo->kind == OPT_DRAFT) return G.pool[G.decider][fo->a];
+    if (G.phase == PH_FX) return G.ctxCard;
+    return -1;
 }
 
 static void update_game(void) {
@@ -589,6 +723,17 @@ static void update_game(void) {
             else if (pauseSel == 1) { paused = 0; rulesReturn = SC_GAME; rulesPage = 0; scene = SC_RULES; }
             else { paused = 0; scene = SC_TITLE; audio_music(1); }
         }
+        return;
+    }
+    if (zoomCard >= 0) {
+        if (pressed[B_SELECT] || pressed[B_BACK] || pressed[B_OK] || pressed[B_START]) { zoomCard = -1; audio_sfx(SFX_BACK); }
+        return;
+    }
+    if (pressed[B_SELECT] && !curtain) {
+        int c = focused_card();
+        if (c < 0) c = lastCard;
+        if (c >= 0) { zoomCard = c; popupCard = -1; audio_sfx(SFX_CARD); }
+        else audio_sfx(SFX_ERROR);
         return;
     }
     if (pressed[B_START]) { paused = 1; pauseSel = 0; audio_sfx(SFX_OK); return; }
@@ -656,31 +801,27 @@ static void update_game(void) {
 /* titulo                                                               */
 
 static void draw_title(void) {
-    draw_space();
-    float bob = sinf(frame * 0.02f) * 6;
-    r_mars(330, 60 + (int)bob, 300);
-    /* foguete cruzando */
-    int rx = (int)((frame * 1.3f)) % (SCREEN_W + 200) - 100;
-    r_icon(IC_ROCKET, rx, 330 - rx / 8, 24, RGBA(255, 255, 255, 200));
-    r_rect(rx - 30, 342 - rx / 8, 30, 2, RGBA(255, 150, 80, 120));
-
-    r_text(FONT_BIG, 40, 70, "MARS COLONY", RGBA(255, 240, 225, 255), 0);
-    r_text(FONT_BIG, 40, 108, "PROJECT RED", RGBA(240, 70, 50, 255), 0);
-    r_rrect(40, 150, 62, 26, RGBA(30, 60, 160, 255));
-    r_text(FONT_MED, 52, 154, "PS2", RGBA(255, 255, 255, 255), 0);
-    r_text(FONT_SMALL, 112, 157, "Colonize Marte. Construa o futuro.", RGBA(220, 200, 190, 255), 0);
-
+    r_title(&TITLE_KEYART, 0, 0, SCREEN_W, SCREEN_H, WHITE);
+    /* menu */
     const char *items[4] = { "Novo jogo", "Como jogar", "Créditos", "Sair" };
+    int mx = 452, my = 300, mw = 178, mh = 132;
+    r_rrect(mx - 2, my - 2, mw + 4, mh + 4, RGBA(10, 6, 20, 200));
+    r_rrect(mx, my, mw, mh, RGBA(30, 20, 50, 210));
+    r_frame(mx, my, mw, mh, RGBA(255, 150, 80, 200));
     for (int i = 0; i < 4; i++) {
-        int y = 220 + i * 32;
+        int y = my + 10 + i * 29;
         if (i == titleSel) {
-            r_rrect(36, y - 4, 210, 26, RGBA(200, 70, 40, 200 + (int)(40 * sinf(frame * 0.15f))));
-            r_icon(IC_ARROW, 44, y, 16, RGBA(255, 255, 255, 255));
+            r_rrect(mx + 6, y - 4, mw - 12, 24, RGBA(220, 80, 40, 220 + (int)(30 * sinf(frame * 0.15f))));
+            r_icon(IC_ARROW, mx + 12, y, 16, WHITE);
         }
-        r_text(FONT_MED, 68, y, items[i], RGBA(255, 255, 255, 255), 0);
+        r_text(FONT_MED, mx + 36, y, items[i], WHITE, 0);
     }
-    if ((frame / 30) % 2) r_text(FONT_SMALL, 40, 360, "Pressione {X} ou START", RGBA(255, 220, 180, 255), 0);
-    r_text(FONT_SMALL, 40, 420, "v1.0  Homebrew para PlayStation 2  -  1 a 4 jogadores", RGBA(150, 140, 150, 255), 0);
+    if ((frame / 30) % 2) {
+        r_rrect(214, 420, 212, 20, RGBA(10, 6, 20, 170));
+        r_text_center(FONT_SMALL, 320, 423, "Pressione {X} ou {Z}", RGBA(255, 230, 190, 255));
+    }
+    r_text(FONT_SMALL, 7, 433, "v1.1 Homebrew PS2", RGBA(0, 0, 0, 200), 0);
+    r_text(FONT_SMALL, 6, 432, "v1.1 Homebrew PS2", RGBA(255, 230, 210, 255), 0);
 }
 
 static void update_title(void) {
@@ -701,22 +842,22 @@ static void update_title(void) {
 #define SETUP_ROWS 8
 static void draw_setup(void) {
     draw_space();
-    r_mars(470, 250, 220);
-    r_text(FONT_BIG, 30, 20, "NOVA MISSÃO", RGBA(255, 240, 225, 255), 0);
+    r_mars(520, 320, 120);
+    r_chrome(30, 22, 30, "NOVA MISSÃO", RGBA(255, 210, 180, 255));
     panel(24, 70, 420, 340, RGBA(200, 90, 60, 255));
     char t[64];
     for (int i = 0; i < SETUP_ROWS; i++) {
         int y = 84 + i * 38;
         int dis = (i >= 1 && i <= 4 && i - 1 >= cfgNp);
         if (i == setupSel) r_rrect(32, y - 6, 404, 30, RGBA(200, 70, 40, 190));
-        Color lc = dis ? RGBA(110, 110, 120, 255) : RGBA(255, 255, 255, 255);
+        Color lc = dis ? RGBA(110, 110, 120, 255) : WHITE;
         if (i == 0) {
             r_text(FONT_MED, 44, y, "Jogadores", lc, 0);
             snprintf(t, sizeof t, "< %d >", cfgNp);
         } else if (i <= 4) {
             int p = i - 1;
-            r_rect(44, y + 2, 10, 14, dis ? RGBA(80, 80, 80, 255) : COL_PLAYER[p]);
-            r_text(FONT_MED, 62, y, PLAYER_NAME[p], lc, 0);
+            if (dis) r_text(FONT_MED, 44, y, PLAYER_NAME[p], lc, 0);
+            else r_chrome(44, y + 1, 14, PLAYER_NAME[p], c_mul(COL_PLAYER[p], 1.15f));
             snprintf(t, sizeof t, "< %s >", SLOT_NAME[cfgSlot[p]]);
         } else if (i == 5) {
             r_text(FONT_MED, 44, y, "Variante: draft de cartas", lc, 0);
@@ -731,9 +872,11 @@ static void draw_setup(void) {
         r_text(FONT_MED, 428 - r_text_w(FONT_MED, t), y, t, lc, 0);
     }
     r_text(FONT_SMALL, 30, 420, "{X} Confirmar   < > Alterar   {O} Voltar", RGBA(220, 220, 230, 255), 0);
-    r_text_wrap(FONT_SMALL, 460, 80, 170,
+    r_text_wrap(FONT_SMALL, 462, 80, 168,
                 "Vários humanos jogam passando o controle (hot-seat). As cartas ficam ocultas entre os turnos.",
                 RGBA(220, 210, 200, 255), 14);
+    const SprRect *m = &ART_MASC[MASC_THUMBS];
+    r_art(m, 470, 170, m->w * 3 / 2, m->h * 3 / 2, WHITE);
 }
 
 static void update_setup(void) {
@@ -758,7 +901,7 @@ static void update_setup(void) {
 static void draw_over(void) {
     draw_space();
     int win = game_winners(&G);
-    r_text_center(FONT_BIG, 320, 14, "MISSÃO CONCLUÍDA", RGBA(255, 235, 215, 255));
+    r_chrome_center(320, 12, 28, "MISSÃO CONCLUÍDA", RGBA(255, 220, 190, 255));
     char t[96];
     int nw = 0, wp = 0;
     for (int i = 0; i < G.np; i++) if (win >> i & 1) { nw++; wp = i; }
@@ -788,6 +931,12 @@ static void draw_over(void) {
         }
     }
     r_text_center(FONT_SMALL, 320, 380, "Empate: vence quem tiver mais colonos em Marte.", RGBA(170, 170, 180, 255));
+    {
+        const SprRect *a = &ART_MASC[MASC_CHEER], *b = &ART_MASC[MASC_THUMBS];
+        int bob = (int)(4 * sinf(frame * 0.15f));
+        r_art(a, 4, 330 + bob, a->w * 5 / 4, a->h * 5 / 4, WHITE);
+        r_art(b, 640 - b->w * 5 / 4 - 4, 330 - bob, b->w * 5 / 4, b->h * 5 / 4, WHITE);
+    }
     const char *it[2] = { "Jogar novamente", "Menu principal" };
     for (int i = 0; i < 2; i++) {
         int x = 190 + i * 260;
@@ -806,7 +955,7 @@ static void update_over(void) {
 /* regras e creditos                                                    */
 
 static const char *RULES_TITLE[] = {
-    "Objetivo", "Preparação", "Seu turno", "Jogar do módulo", "Regra das 4 cartas", "Edifícios", "Fim e pontuação", "Controles"
+    "Objetivo", "Preparação", "As cartas", "Seu turno", "Jogar do módulo", "Regra das 4 cartas", "Edifícios", "Fim e pontuação", "Controles"
 };
 static const char *RULES_TEXT[] = {
     "Cada jogador comanda uma agência espacial com 7 colonos. Use cartas de projeto para levar colonos da Terra para a sua nave {R} e da nave para os edifícios de Marte.\n\n"
@@ -814,6 +963,11 @@ static const char *RULES_TEXT[] = {
     "Cada jogador começa com 1 {C} na nave, 6 {C} na Terra e 1 {E} de energia.\n\n"
     "Cada um recebe 4 cartas de projeto e escolhe 2 para o seu {M} módulo de preparação (viradas para baixo; os outros só veem a cor). As outras 2 ficam na {H} mão.\n\n"
     "Variante draft: cada um recebe 5 cartas, fica com 1 e passa o resto, até ter 4.",
+    "Cada carta de projeto tem uma COR (o edifício onde é conectada), um VALOR de 0 a 7 e duas ações.\n\n"
+    "{H} AÇÃO DA MÃO: usada quando você joga a carta da mão.\n"
+    "{M} AÇÃO DO MÓDULO: usada quando a carta é conectada a um edifício a partir de um módulo.\n\n"
+    "O valor só importa no módulo: se for maior que o valor visível do edifício, você pousa um colono.\n\n"
+    "Pressione {Q} durante o jogo para ver qualquer carta em tamanho grande.",
     "No seu turno faça UMA destas ações:\n\n"
     "{H} Jogar uma carta da mão: use a ação de cima dela e descarte-a.\n"
     "{M} Jogar uma carta do seu módulo (veja a próxima página).\n"
@@ -844,16 +998,49 @@ static const char *RULES_TEXT[] = {
     "No PC: setas, Enter/Z (confirmar), Esc/X (voltar), Tab (inspecionar), P (pausa).\n\n"
     "Dica: a coluna de pontos de cada jogador mostra a pontuação se o jogo acabasse agora."
 };
-#define NRULES 8
+#define NRULES 9
 
 static void draw_rules(void) {
     draw_space();
-    r_text(FONT_BIG, 30, 16, "COMO JOGAR", RGBA(255, 240, 225, 255), 0);
     char t[48]; snprintf(t, sizeof t, "%d / %d", rulesPage + 1, NRULES);
+    int controls = (rulesPage == NRULES - 1);
+    if (controls) {
+        /* tela de controles: usa a textura TITLE (botoes); titulo com fonte normal ampliada */
+        r_text_scale(2.0f);
+        r_text(FONT_MED, 30, 14, "COMO JOGAR", RGBA(255, 230, 210, 255), 0);
+        r_text_scale(1.0f);
+    } else {
+        r_chrome(30, 18, 28, "COMO JOGAR", RGBA(255, 210, 180, 255));
+    }
     r_text(FONT_MED, 600 - r_text_w(FONT_MED, t), 28, t, RGBA(220, 200, 190, 255), 0);
     panel(24, 64, 592, 340, RGBA(200, 90, 60, 255));
     r_text(FONT_MED, 40, 76, RULES_TITLE[rulesPage], RGBA(255, 190, 140, 255), 0);
-    r_text_wrap(FONT_SMALL, 40, 104, 560, RULES_TEXT[rulesPage], RGBA(235, 235, 235, 255), 17);
+    if (controls) {
+        static const struct { int pad; int x, y; const char *txt; } C[] = {
+            { PAD_DPAD, 46, 110, "Navegar" }, { PAD_CROSS, 330, 104, "Confirmar" },
+            { PAD_CIRCLE, 330, 150, "Voltar / desfazer" }, { PAD_TRI, 330, 196, "Inspecionar tabuleiro" },
+            { PAD_SQUARE, 330, 242, "Ver carta em tamanho grande" }, { PAD_L1, 40, 240, "Rolar lista" },
+            { PAD_R1, 150, 240, "Rolar lista" }, { PAD_START, 46, 304, "Pausa" },
+        };
+        for (unsigned i = 0; i < sizeof C / sizeof C[0]; i++) {
+            const SprRect *r = &TITLE_PAD[C[i].pad];
+            r_title(r, C[i].x, C[i].y, r->w, r->h, WHITE);
+            if (C[i].pad == PAD_DPAD) r_text(FONT_SMALL, C[i].x + r->w + 10, C[i].y + 40, C[i].txt, WHITE, 0);
+            else if (C[i].pad == PAD_L1 || C[i].pad == PAD_R1)
+                r_text(FONT_SMALL, C[i].x + 4, C[i].y + r->h + 2, C[i].txt, WHITE, 0);
+            else r_text(FONT_SMALL, C[i].x + r->w + 10, C[i].y + 13, C[i].txt, WHITE, 0);
+        }
+        r_text_wrap(FONT_SMALL, 40, 372, 560, "No PC: setas, Enter/Z (confirmar), Esc/X (voltar), Tab (inspecionar), R (ver carta), P (pausa).",
+                    RGBA(200, 200, 210, 255), 15);
+    } else if (rulesPage == 2) {
+        /* anatomia da carta */
+        draw_card_full(44, 100, 196, 14);
+        r_text_wrap(FONT_SMALL, 264, 104, 336, RULES_TEXT[rulesPage], RGBA(235, 235, 235, 255), 17);
+    } else {
+        r_text_wrap(FONT_SMALL, 40, 104, 560, RULES_TEXT[rulesPage], RGBA(235, 235, 235, 255), 17);
+        const SprRect *m = &ART_MASC[rulesPage % 2 ? MASC_ROBOT : MASC_POINT];
+        r_art(m, 600 - m->w, 400 - m->h - 4, m->w, m->h, WHITE);
+    }
     r_text(FONT_SMALL, 30, 418, "< > Página   {O} Voltar", RGBA(220, 220, 230, 255), 0);
 }
 
@@ -868,18 +1055,22 @@ static void update_rules(void) {
 
 static void draw_credits(void) {
     draw_space();
-    r_mars(400, 120, 260);
-    r_text(FONT_BIG, 30, 20, "CRÉDITOS", RGBA(255, 240, 225, 255), 0);
+    r_mars(470, 90, 120);
+    r_chrome(30, 22, 30, "CRÉDITOS", RGBA(255, 210, 180, 255));
     panel(24, 70, 400, 320, RGBA(200, 90, 60, 255));
     r_text_wrap(FONT_SMALL, 40, 86, 370,
         "MARS COLONY: PROJECT RED PS2\n"
         "Homebrew para PlayStation 2 feito com PS2SDK, gsKit e SDL2.\n\n"
         "Mecânicas adaptadas das regras do jogo de cartas Pocket Mars (design de Michał Jagodziński, Board&Dice), "
-        "fornecidas pelo jogador. Nomes, cartas, efeitos, arte e código deste jogo são originais.\n\n"
-        "Fonte: DejaVu Sans (licença livre).\n"
+        "fornecidas pelo jogador. Nomes, cartas, efeitos e código deste jogo são originais.\n\n"
+        "Arte das cartas, personagens, logotipo e fonte cromada: fornecidos pelo jogador.\n"
+        "Fonte de texto: DejaVu Sans (licença livre).\n"
         "Música e efeitos: sintetizados em tempo real.\n\n"
         "Projeto de fã, sem fins comerciais.",
         RGBA(235, 235, 235, 255), 16);
+    const SprRect *a = &ART_MASC[MASC_CHEER], *b = &ART_MASC[MASC_ROBOT];
+    r_art(a, 440, 300, a->w * 3 / 2, a->h * 3 / 2, WHITE);
+    r_art(b, 540, 320, b->w * 5 / 4, b->h * 5 / 4, WHITE);
     r_text(FONT_SMALL, 30, 418, "{O} Voltar", RGBA(220, 220, 230, 255), 0);
 }
 
@@ -943,6 +1134,11 @@ static int autotest(const char *dir) {
     optSel = 1; shot(dir, "04_jogo_meio");
     inspect = 1; inspectSel = 0; shot(dir, "05_inspecionar");
     inspect = 0;
+    zoomCard = focused_card(); if (zoomCard < 0) zoomCard = 12;
+    shot(dir, "05b_zoom_carta"); zoomCard = -1;
+    popupCard = 26; popupUntil = SDL_GetTicks() + 100000; snprintf(popupText, sizeof popupText, "Azul joga da mão");
+    G.decider = 1; G.p[1].human = 0; shot(dir, "05c_cpu_revela"); G.p[1].human = 0; popupCard = -1;
+    G.decider = 0;
     /* procurar uma decisao de efeito/habilidade humana */
     for (int i = 0; i < 3000 && G.phase != PH_OVER; i++) {
         nopts = game_options(&G, opts);
@@ -956,8 +1152,9 @@ static int autotest(const char *dir) {
     for (int i = 0; i < 5000 && G.phase != PH_OVER; i++) { nopts = game_options(&G, opts); apply_option(ai_choose(&G, &aiSeed)); }
     autoplayHuman = 0;
     scene = SC_OVER; shot(dir, "07_fim");
-    scene = SC_RULES; rulesPage = 3; shot(dir, "08_regras");
-    rulesPage = 5; shot(dir, "09_regras_edificios");
+    scene = SC_RULES; rulesPage = 2; shot(dir, "08_regras_cartas");
+    rulesPage = 6; shot(dir, "09_regras_edificios");
+    rulesPage = 8; shot(dir, "09b_controles");
     scene = SC_CREDITS; shot(dir, "10_creditos");
     /* hot-seat: cortina */
     cfgNp = 2; cfgSlot[0] = 0; cfgSlot[1] = 0; start_game();
