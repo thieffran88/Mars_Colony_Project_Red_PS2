@@ -1,8 +1,13 @@
 Mars Colony: Project Red PS2 — homebrew para PlayStation 2.
 
 **Arquivos**
-- `MARSCOL.ELF` — rode pelo uLaunchELF/wLaunchELF (pendrive USB), PS2Link ou "Run ELF" no PCSX2.
+- `MARSCOL.ELF` — executável sem compressão (o mais compatível). Rode pelo uLaunchELF/wLaunchELF (pendrive USB), PS2Link ou "Run ELF" no PCSX2.
+- `MARSCOL_PACKED.ELF` — mesmo jogo comprimido (~1 MB), para carregadores com pouco espaço.
 - `MarsColony_ProjectRed_PS2.iso` — imagem de disco para o PCSX2 ou OPL (NTSC, 640x448).
+
+**Novidades da v1.4**
+- Áudio do PS2 reescrito: o jogo alimenta o servidor de som (audsrv) diretamente, inclusive enquanto a IA pensa. Corrige silêncio e estalos no AetherSX2.
+- O `MARSCOL.ELF` principal agora vem sem compressão: ele carrega no endereço padrão e é aceito por mais emuladores. A versão comprimida carregava perto do fim da RAM.
 
 **Novidades da v1.3**
 - Corrige cores e transparência no PS2 e em emuladores: o chip gráfico (GS) usa 128 como 100% e o jogo enviava 255, deixando tudo com o dobro de brilho e opacidade.

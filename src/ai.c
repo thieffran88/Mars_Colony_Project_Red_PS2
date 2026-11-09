@@ -100,7 +100,11 @@ static int turn_done(const Game *g) {
            g->phase == PH_SETUP_PREP || g->phase == PH_DRAFT;
 }
 
+void (*ai_idle)(void) = 0;
+static unsigned idleTick;
+
 static float search(const Game *g, int root, int *budget) {
+    if (ai_idle && (++idleTick & 31) == 0) ai_idle();
     if (turn_done(g) || *budget <= 0) return evaluate(g, root);
     Option o[MAX_OPTS];
     int n = game_options(g, o);

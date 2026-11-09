@@ -22,20 +22,27 @@ SRC     := src/main.c src/game.c src/ai.c src/render.c src/audio.c src/synth.c s
 BUILD   := build/ps2
 ELF     := $(BUILD)/MARSCOL_UNPACKED.ELF
 FINAL   := dist/MARSCOL.ELF
+PACKED  := dist/MARSCOL_PACKED.ELF
 ISO     := dist/MarsColony_ProjectRed_PS2.iso
 
-all: $(FINAL)
+all: $(FINAL) $(PACKED)
 
 $(ELF): $(SRC) src/*.h data/art.rle data/title.rle
 	@mkdir -p $(BUILD)
 	$(CC) $(CFLAGS) -o $@ $(SRC) $(LDFLAGS) $(LIBS)
 	$(STRIP) -s $@
 
+# ELF principal SEM compressao: e o mais compativel com emuladores
+# (AetherSX2/PCSX2) e carregadores. A versao comprimida fica como opcao.
 $(FINAL): $(ELF)
+	@mkdir -p dist
+	cp $< $@
+
+$(PACKED): $(ELF)
 	@mkdir -p dist
 	@if [ -x "$(PACKER)" ]; then $(PACKER) $< $@; else cp $< $@; fi
 
-iso: $(FINAL)
+iso: $(FINAL) $(PACKED)
 	@mkdir -p $(BUILD)/iso
 	cp $(FINAL) $(BUILD)/iso/MARSCOL.ELF
 	cp ps2/SYSTEM.CNF $(BUILD)/iso/SYSTEM.CNF
@@ -43,6 +50,6 @@ iso: $(FINAL)
 	    -o $(ISO) $(BUILD)/iso
 
 clean:
-	rm -rf $(BUILD) $(FINAL) $(ISO)
+	rm -rf $(BUILD) $(FINAL) $(PACKED) $(ISO)
 
 .PHONY: all iso clean

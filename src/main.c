@@ -886,8 +886,8 @@ static void draw_title(void) {
         r_rrect(214, 420, 212, 20, RGBA(10, 6, 20, 170));
         r_text_center(FONT_SMALL, 320, 423, TR("Pressione {X} ou {Z}", "Press {X} or {Z}", "Pulsa {X} o {Z}"), RGBA(255, 230, 190, 255));
     }
-    r_text(FONT_SMALL, 7, 433, "v1.3 Homebrew PS2", RGBA(0, 0, 0, 200), 0);
-    r_text(FONT_SMALL, 6, 432, "v1.3 Homebrew PS2", RGBA(255, 230, 210, 255), 0);
+    r_text(FONT_SMALL, 7, 433, "v1.4 Homebrew PS2", RGBA(0, 0, 0, 200), 0);
+    r_text(FONT_SMALL, 6, 432, "v1.4 Homebrew PS2", RGBA(255, 230, 210, 255), 0);
 }
 
 /* ------------------------------------------------------------------ */
@@ -1427,6 +1427,7 @@ int main(int argc, char **argv) {
 #endif
     audio_init();
     audio_volume(cfgMusic, cfgSfx);
+    ai_idle = audio_pump;
     int lastScene = -1;
     Uint32 demoEnd = 0;
     if (demo) {
@@ -1436,6 +1437,7 @@ int main(int argc, char **argv) {
 
     while (!quitReq) {
         Uint32 t0 = SDL_GetTicks();
+        audio_pump();
         poll_input();
         switch (scene) {
         case SC_TITLE: update_title(); break;
@@ -1456,6 +1458,7 @@ int main(int argc, char **argv) {
         SDL_SetRenderDrawColor(R, 0, 0, 0, 255);
         SDL_RenderClear(R);
         draw_scene();
+        audio_pump();
         present();
         frame++;
         if (demo && scene == SC_OVER) {

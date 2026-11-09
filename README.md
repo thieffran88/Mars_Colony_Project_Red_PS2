@@ -28,7 +28,10 @@ Os arquivos prontos estão em `dist/`:
 | Arquivo | Uso |
 |---|---|
 | `dist/MarsColony_ProjectRed_PS2.iso` | Imagem de disco: abra no **PCSX2** (ou grave para um console com OPL/desbloqueio). |
-| `dist/MARSCOL.ELF` | Executável: rode pelo **uLaunchELF/wLaunchELF** (pendrive USB), pelo PS2Link ou em *Run ELF* no PCSX2. |
+| `dist/MARSCOL.ELF` | Executável sem compressão (o mais compatível): rode pelo **uLaunchELF/wLaunchELF** (pendrive USB), pelo PS2Link ou em *Run ELF* no PCSX2. |
+| `dist/MARSCOL_PACKED.ELF` | O mesmo jogo comprimido (~1 MB) com o ps2-packer. |
+
+**AetherSX2 (Android):** use a **ISO**. Coloque-a na pasta de jogos configurada e atualize a lista.
 
 A ISO usa `SYSTEM.CNF` com `BOOT2 = cdrom0:\MARSCOL.ELF;1` (NTSC, 640x448). Tudo (fontes,
 ícones, sons) está embutido no ELF, então não é preciso nenhum arquivo extra.
@@ -94,7 +97,10 @@ ao subir para ★★, **ping de sonar** quando começa a sua vez, brilho cristal
 bips de dados ao comprar cartas e zumbido de erro. Os sons das habilidades automáticas dos edifícios
 também tocam.
 
-O áudio sai a **48 kHz**, a taxa nativa do SPU2. Outras taxas passariam pelo conversor do `audsrv`
+No PS2 o jogo **não usa a thread de áudio do SDL**. As threads do PS2 não têm fatiamento de tempo, então
+aquela thread só rodava quando o loop principal cedia a CPU, e a IA calculando causava silêncio ou estalos.
+Agora `audio_pump()` completa a fila de ~100 ms do `audsrv` a cada quadro e também durante a busca da IA
+(gancho `ai_idle`). O áudio sai a **48 kHz**, a taxa nativa do SPU2. Outras taxas passariam pelo conversor do `audsrv`
 no IOP, que gera chiado. O sintetizador roda a 24 kHz e o resultado é interpolado 2× para poupar o EE.
 
 Volumes de música e efeitos (0–10) ficam na tela de configuração e no menu de pausa.
