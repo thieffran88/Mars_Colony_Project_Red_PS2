@@ -30,7 +30,7 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ github.event.inputs.tag || github.ref_name }}
-          name: Mars Colony: Project Red PS2 ${{ github.event.inputs.tag || github.ref_name }}
+          name: "Mars Colony - Project Red PS2 ${{ github.event.inputs.tag || github.ref_name }}"
           body_path: docs/release_notes.md
           target_commitish: ${{ github.sha }}
           files: |
