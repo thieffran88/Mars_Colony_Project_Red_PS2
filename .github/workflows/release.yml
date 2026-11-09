@@ -1,0 +1,38 @@
+# Publica um release com o ELF e a ISO de dist/.
+# Dispare em Actions > "Publicar release" > Run workflow (informe a tag, ex.: v1.2),
+# ou envie uma tag v* para o repositório.
+name: Publicar release
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Tag do release (ex.: v1.2)"
+        required: true
+        default: "v1.2"
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Conferir arquivos
+        run: ls -la dist/MARSCOL.ELF dist/MarsColony_ProjectRed_PS2.iso
+
+      - name: Criar release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.event.inputs.tag || github.ref_name }}
+          name: Mars Colony: Project Red PS2 ${{ github.event.inputs.tag || github.ref_name }}
+          body_path: docs/release_notes.md
+          target_commitish: ${{ github.sha }}
+          files: |
+            dist/MARSCOL.ELF
+            dist/MarsColony_ProjectRed_PS2.iso
