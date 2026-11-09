@@ -2,3 +2,4 @@ build/
 marscolony
 sim
 *.o
+__pycache__/
