@@ -1,0 +1,4 @@
+build/
+marscolony
+sim
+*.o

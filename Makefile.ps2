@@ -1,0 +1,48 @@
+# Build para PlayStation 2 (requer PS2SDK/ps2dev com os ports SDL2).
+#   export PS2DEV=/usr/local/ps2dev PS2SDK=$PS2DEV/ps2sdk
+#   make -f Makefile.ps2          -> MARSCOL.ELF
+#   make -f Makefile.ps2 iso      -> MarsColony_ProjectRed_PS2.iso
+PS2DEV  ?= /usr/local/ps2dev
+PS2SDK  ?= $(PS2DEV)/ps2sdk
+GSKIT   ?= $(PS2DEV)/gsKit
+PORTS   := $(PS2SDK)/ports
+PREFIX  := $(PS2DEV)/ee/bin/mips64r5900el-ps2-elf-
+
+CC      := $(PREFIX)gcc
+STRIP   := $(PREFIX)strip
+PACKER  := $(PS2DEV)/bin/ps2-packer
+
+CFLAGS  := -D_EE -DPS2 -O2 -G0 -Wall -Wno-misleading-indentation \
+           -I$(PORTS)/include -I$(PORTS)/include/SDL2 -I$(PS2SDK)/ee/include \
+           -I$(PS2SDK)/common/include -I$(GSKIT)/include
+LDFLAGS := -T$(PS2SDK)/ee/startup/linkfile -L$(PORTS)/lib -L$(PS2SDK)/ee/lib -L$(GSKIT)/lib
+LIBS    := -lSDL2main -lSDL2 -lm -lpatches -lgskit -ldmakit -lps2_drivers -laudsrv
+
+SRC     := src/main.c src/game.c src/ai.c src/render.c src/audio.c
+BUILD   := build/ps2
+ELF     := $(BUILD)/MARSCOL_UNPACKED.ELF
+FINAL   := dist/MARSCOL.ELF
+ISO     := dist/MarsColony_ProjectRed_PS2.iso
+
+all: $(FINAL)
+
+$(ELF): $(SRC) src/*.h
+	@mkdir -p $(BUILD)
+	$(CC) $(CFLAGS) -o $@ $(SRC) $(LDFLAGS) $(LIBS)
+	$(STRIP) -s $@
+
+$(FINAL): $(ELF)
+	@mkdir -p dist
+	@if [ -x "$(PACKER)" ]; then $(PACKER) $< $@; else cp $< $@; fi
+
+iso: $(FINAL)
+	@mkdir -p $(BUILD)/iso
+	cp $(FINAL) $(BUILD)/iso/MARSCOL.ELF
+	cp ps2/SYSTEM.CNF $(BUILD)/iso/SYSTEM.CNF
+	genisoimage -quiet -l -V MARSCOLONY -sysid PLAYSTATION -A "MARS COLONY PROJECT RED" \
+	    -o $(ISO) $(BUILD)/iso
+
+clean:
+	rm -rf $(BUILD) $(FINAL) $(ISO)
+
+.PHONY: all iso clean
